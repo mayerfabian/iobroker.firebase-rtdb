@@ -70,7 +70,7 @@ export class SyncRuntime {
     }
 
     if (this.dailyTimer) {
-      clearTimeout(this.dailyTimer);
+      clearInterval(this.dailyTimer);
     }
   }
 
@@ -150,7 +150,10 @@ export class SyncRuntime {
     }
 
     if (channel.mode === 'change') {
-      return { shouldWrite: true, reason: 'value changed', delta };
+      if (delta >= (channel.minChange ?? 0)) {
+        return { shouldWrite: true, reason: `value changed (delta ${delta} >= ${channel.minChange ?? 0})`, delta };
+      }
+      return { shouldWrite: false, reason: `delta below minChange (${delta} < ${channel.minChange ?? 0})`, delta };
     }
 
     if (channel.mode === 'threshold' && delta >= (channel.minChange ?? 0)) {
@@ -284,29 +287,48 @@ export class SyncRuntime {
   }
 
   private startDailyTimer(): void {
-    const scheduleNext = (): void => {
-      const now = new Date();
-      const next = new Date(now);
-      const config = this.adapter.config as AdapterNativeConfig;
-      next.setHours(Number(config.dailyWriteHour ?? 0), Number(config.dailyWriteMinute ?? 10), 0, 0);
+    // Check every 30 seconds so per-channel daily schedules can trigger precisely without duplicate writes.
+    this.dailyTimer = setInterval(() => {
+      void this.runDailyWrites().catch((error) => this.adapter.log.error(`Daily write cycle failed: ${error.message}`));
+    }, 30000);
 
-      if (next <= now) {
-        next.setDate(next.getDate() + 1);
-      }
-
-      this.dailyTimer = setTimeout(() => {
-        void this.runDailyWrites().finally(scheduleNext);
-      }, next.getTime() - now.getTime());
-    };
-
-    scheduleNext();
+    void this.runDailyWrites().catch((error) => this.adapter.log.error(`Initial daily write check failed: ${error.message}`));
   }
 
   private async runDailyWrites(): Promise<void> {
     for (const channel of this.channels.filter((item) => item.mode === 'daily_only')) {
+      if (!this.shouldRunDailyWriteNow(channel)) {
+        continue;
+      }
+
       const state = await this.adapter.getForeignStateAsync(channel.stateId);
       await this.processRawValue(channel, state?.val, 'daily');
+      this.getRuntimeState(channel).lastDailyWriteKey = this.getDailyWriteKey(new Date(), channel);
     }
+  }
+
+  private shouldRunDailyWriteNow(channel: ChannelConfig): boolean {
+    const now = new Date();
+    const { hour, minute } = this.getDailyTarget(channel);
+    if (now.getHours() !== hour || now.getMinutes() !== minute) {
+      return false;
+    }
+
+    const runtimeState = this.getRuntimeState(channel);
+    return runtimeState.lastDailyWriteKey !== this.getDailyWriteKey(now, channel);
+  }
+
+  private getDailyTarget(channel: ChannelConfig): { hour: number; minute: number } {
+    const config = this.adapter.config as AdapterNativeConfig;
+    return {
+      hour: clampInt(channel.dailyHour ?? config.dailyWriteHour ?? 0, 0, 23),
+      minute: clampInt(channel.dailyMinute ?? config.dailyWriteMinute ?? 10, 0, 59)
+    };
+  }
+
+  private getDailyWriteKey(now: Date, channel: ChannelConfig): string {
+    const { hour, minute } = this.getDailyTarget(channel);
+    return `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}-${hour}-${minute}`;
   }
 
   private getRuntimeState(channel: ChannelConfig): ChannelRuntimeState {
@@ -345,8 +367,15 @@ function transformValue(rawValue: ioBroker.StateValue | undefined, channel: Chan
   return Math.round(value * precision) / precision;
 }
 
-function setDeepValue(target: Record<string, unknown>, dotPath: string, value: unknown): void {
-  const parts = dotPath.split('.');
+function setDeepValue(target: Record<string, unknown>, path: string, value: unknown): void {
+  const parts = path
+    .split('/')
+    .flatMap((part) => part.split('.'))
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (!parts.length) {
+    return;
+  }
   let current: Record<string, unknown> = target;
 
   for (const part of parts.slice(0, -1)) {
@@ -359,4 +388,8 @@ function setDeepValue(target: Record<string, unknown>, dotPath: string, value: u
   }
 
   current[parts[parts.length - 1]] = value;
+}
+
+function clampInt(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, Math.trunc(value)));
 }

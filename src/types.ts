@@ -14,6 +14,8 @@ export interface ChannelConfig {
   round: number;
   minSendIntervalMs?: number;
   maxSendIntervalMs?: number;
+  dailyHour?: number;
+  dailyMinute?: number;
 }
 
 export interface AdapterNativeConfig {
@@ -52,6 +54,7 @@ export interface ChannelRuntimeState {
   lastObservedAtMs?: number;
   lastWrittenValue?: number;
   lastWrittenAtMs?: number;
+  lastDailyWriteKey?: string;
   pendingTimer?: NodeJS.Timeout;
 }
 
@@ -66,5 +69,7 @@ export interface CustomStateConfig {
   round?: number;
   minSendIntervalMs?: number;
   maxSendIntervalMs?: number;
+  dailyHour?: number;
+  dailyMinute?: number;
   defaultValue?: number | null;
 }

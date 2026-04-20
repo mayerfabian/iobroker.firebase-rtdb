@@ -77,7 +77,12 @@ class FirebaseHistorySyncAdapter extends utils.Adapter {
     const channels: ChannelConfig[] = [];
     for (const row of result.rows) {
       const object = row.value;
-      const custom = object?.common?.custom?.[this.namespace] as CustomStateConfig | undefined;
+      if (!object) {
+        continue;
+      }
+
+      const customMap = object?.common?.custom as Record<string, CustomStateConfig | undefined> | undefined;
+      const custom = customMap?.[this.namespace] ?? customMap?.[this.name];
       if (!custom?.enabled) {
         continue;
       }
@@ -96,7 +101,9 @@ class FirebaseHistorySyncAdapter extends utils.Adapter {
         transform: custom.transform ?? 'none',
         round: custom.round ?? 1,
         minSendIntervalMs: custom.minSendIntervalMs ?? 10000,
-        maxSendIntervalMs: custom.maxSendIntervalMs ?? 900000
+        maxSendIntervalMs: custom.maxSendIntervalMs ?? 900000,
+        dailyHour: custom.dailyHour ?? config.dailyWriteHour ?? 0,
+        dailyMinute: custom.dailyMinute ?? config.dailyWriteMinute ?? 10
       };
 
       channels.push(channel);
@@ -230,7 +237,12 @@ function looksLikeJson(value: string): boolean {
 }
 
 function objectIdToFirebaseKey(objectId: string): string {
-  return `custom.${objectId.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '')}`;
+  const normalizedPath = String(objectId)
+    .split('.')
+    .map((part) => part.trim().replace(/[.#$\[\]/]+/g, '_').replace(/^_+|_+$/g, ''))
+    .filter(Boolean)
+    .join('/');
+  return normalizedPath ? `custom/${normalizedPath}` : 'custom/value';
 }
 
 function mergeChannelsByStateId(baseChannels: ChannelConfig[], customChannels: ChannelConfig[]): ChannelConfig[] {

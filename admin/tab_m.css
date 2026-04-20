@@ -282,6 +282,10 @@ body.m {
     grid-column: 1 / -1;
 }
 
+.detail-field.span-2 {
+    grid-column: span 2;
+}
+
 .detail-field label {
     display: block;
     font-size: 11px;
@@ -290,11 +294,86 @@ body.m {
     margin-bottom: 4px;
 }
 
+.label-with-info {
+    display: flex !important;
+    align-items: center;
+    gap: 6px;
+}
+
+.info-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 1px solid #90a4ae;
+    color: #607d8b;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: none;
+    cursor: help;
+    background: #fff;
+}
+
+.firebase-info-tooltip {
+    position: absolute;
+    max-width: 360px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: #263238;
+    color: #fff;
+    font-size: 12px;
+    line-height: 1.3;
+    z-index: 1200;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease-in-out;
+}
+
+.firebase-info-tooltip.visible {
+    opacity: 1;
+}
+
 .detail-field input[type="text"],
 .detail-field input[type="number"],
 .detail-field select {
     margin: 0;
     height: 2.2rem;
+}
+
+.detail-field .field-help {
+    font-size: 12px;
+    color: #6b7785;
+    margin-top: 4px;
+    line-height: 1.25;
+}
+
+.channel-card.mode-daily .mode-not-daily {
+    display: none;
+}
+
+.channel-card.mode-interval .mode-daily-only {
+    display: none;
+}
+
+.input-with-unit {
+    position: relative;
+}
+
+.input-with-unit input[type="number"] {
+    padding-right: 42px;
+    box-sizing: border-box;
+}
+
+.input-with-unit .unit-suffix {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #6b7785;
+    font-size: 12px;
+    pointer-events: none;
 }
 
 .detail-actions {

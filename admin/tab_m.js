@@ -6,6 +6,9 @@
         minChange: 0,
         factor: 1,
         transform: 'none',
+        timeUnit: 'ms',
+        dailyHour: 0,
+        dailyMinute: 10,
         round: 1,
         minSendIntervalMs: 10000,
         maxSendIntervalMs: 900000,
@@ -22,6 +25,8 @@
     let pickerSelection = new Set();
     let pendingDeleteIndex = null;
     let skipDeleteConfirmForSession = false;
+    let systemTimeIntervalId = null;
+    let infoTooltipEl = null;
 
     window.registerSocketOnLoad(async function () {
         try {
@@ -44,6 +49,7 @@
         instanceObjectId = `system.adapter.${namespace}`;
 
         bindUi();
+        startSystemTimeTicker();
         setStatus(`Instanz ${namespace}`);
         await loadPage();
     }
@@ -191,6 +197,9 @@
                 minChange: DEFAULT_ROW.minChange,
                 factor: DEFAULT_ROW.factor,
                 transform: DEFAULT_ROW.transform,
+                timeUnit: DEFAULT_ROW.timeUnit,
+                dailyHour: DEFAULT_ROW.dailyHour,
+                dailyMinute: DEFAULT_ROW.dailyMinute,
                 round: DEFAULT_ROW.round,
                 minSendIntervalMs: DEFAULT_ROW.minSendIntervalMs,
                 maxSendIntervalMs: DEFAULT_ROW.maxSendIntervalMs,
@@ -209,7 +218,8 @@
     function mapRowToChannel(row) {
         const object = row?.value;
         const stateId = row?.id || object?._id;
-        const custom = object?.common?.custom?.[namespace];
+        const customMap = object?.common?.custom || {};
+        const custom = customMap[namespace] || customMap[ADAPTER];
         if (!stateId || !custom?.enabled) {
             return null;
         }
@@ -222,6 +232,9 @@
             minChange: custom.minChange ?? DEFAULT_ROW.minChange,
             factor: custom.factor ?? DEFAULT_ROW.factor,
             transform: custom.transform || DEFAULT_ROW.transform,
+            timeUnit: normalizeTimeUnit(custom.timeUnit),
+            dailyHour: normalizeDailyHour(custom.dailyHour),
+            dailyMinute: normalizeDailyMinute(custom.dailyMinute),
             round: custom.round ?? DEFAULT_ROW.round,
             minSendIntervalMs: custom.minSendIntervalMs ?? DEFAULT_ROW.minSendIntervalMs,
             maxSendIntervalMs: custom.maxSendIntervalMs ?? DEFAULT_ROW.maxSendIntervalMs,
@@ -234,13 +247,14 @@
         $body.empty();
 
         if (!rows.length) {
-            $body.append(`<div class="empty-row">${emptyMessage || 'Keine Datenpunkte ausgewaehlt.'}</div>`);
+            $body.append(`<div class="empty-row">${emptyMessage || 'Keine Datenpunkte ausgewählt.'}</div>`);
             return;
         }
 
         rows.forEach((row, index) => {
+            const isDaily = row.mode === 'daily_only';
             const $card = $(`
-                <div class="channel-card" data-index="${index}">
+                <div class="channel-card ${isDaily ? 'mode-daily' : 'mode-interval'}" data-index="${index}">
                     <div class="channel-summary">
                         <div class="summary-sync">
                             ${renderCheckbox(row.sync)}
@@ -257,49 +271,84 @@
                     </div>
                     <div class="channel-details">
                         <div class="details-grid">
-                            <div class="detail-field full">
+                            <div class="detail-field span-2">
                                 <label>State ID</label>
                                 <input class="state-id" type="text" data-field="stateId" value="${escapeHtml(row.stateId)}" />
                             </div>
-                            <div class="detail-field full">
-                                <label>Firebase Key</label>
+                            <div class="detail-field">
+                                <label class="label-with-info">
+                                    Firebase Key
+                                    <span class="info-icon" tabindex="0" aria-label="Info zu Firebase Key">i</span>
+                                </label>
                                 <input class="channel-key" type="text" data-field="key" value="${escapeHtml(row.key)}" />
                             </div>
                             <div class="detail-field">
                                 <label>Mode</label>
-                                ${renderSelect('mode', row.mode, ['threshold', 'change', 'daily_only'])}
-                            </div>
-                            <div class="detail-field">
-                                <label>minChange</label>
-                                <input type="number" step="0.1" data-field="minChange" value="${row.minChange}" />
-                            </div>
-                            <div class="detail-field">
-                                <label>Factor</label>
-                                <input type="number" step="0.1" data-field="factor" value="${row.factor}" />
+                                ${renderSelect('mode', row.mode, [
+                                    { value: 'threshold', label: 'Schwellwert' },
+                                    { value: 'change', label: 'Jede Änderung (bei Wertwechsel)' },
+                                    { value: 'daily_only', label: 'Täglich (Uhrzeit)' }
+                                ])}
                             </div>
                             <div class="detail-field">
                                 <label>Transform</label>
-                                ${renderSelect('transform', row.transform, ['none', 'positive_only', 'boolean'])}
+                                ${renderSelect('transform', row.transform, [
+                                    { value: 'none', label: 'Keine Umwandlung' },
+                                    { value: 'positive_only', label: 'Nur positiv (negative Werte werden 0)' },
+                                    { value: 'boolean', label: 'Boolean (0 oder 1)' }
+                                ])}
+                            </div>
+                            <div class="detail-field">
+                                <label>Zeiteinheit</label>
+                                ${renderSelect('timeUnit', row.timeUnit, [
+                                    { value: 'ms', label: 'Millisekunden' },
+                                    { value: 's', label: 'Sekunden' },
+                                    { value: 'min', label: 'Minuten' },
+                                    { value: 'h', label: 'Stunden' },
+                                    { value: 'd', label: 'Tage' }
+                                ])}
+                            </div>
+                            <div class="detail-field">
+                                <label>Mindeständerung</label>
+                                <input type="number" step="0.1" data-field="minChange" value="${row.minChange}" />
+                            </div>
+                            <div class="detail-field">
+                                <label>Faktor</label>
+                                <input type="number" step="0.1" data-field="factor" value="${row.factor}" />
                             </div>
                             <div class="detail-field">
                                 <label>Round</label>
                                 <input type="number" step="1" data-field="round" value="${row.round}" />
                             </div>
-                            <div class="detail-field">
-                                <label>Min ms</label>
-                                <input type="number" step="1" data-field="minSendIntervalMs" value="${row.minSendIntervalMs}" />
+                            <div class="detail-field mode-not-daily">
+                                <label>Min Sendeintervall</label>
+                                <div class="input-with-unit">
+                                    <input type="number" step="any" data-field="minSendIntervalMs" value="${formatMsForUnit(row.minSendIntervalMs, row.timeUnit)}" />
+                                    <span class="unit-suffix">${formatTimeUnitDisplay(row.timeUnit)}</span>
+                                </div>
+                                <div class="field-help">Kürzester Abstand zwischen zwei Schreibvorgängen.</div>
                             </div>
-                            <div class="detail-field">
-                                <label>Max ms</label>
-                                <input type="number" step="1" data-field="maxSendIntervalMs" value="${row.maxSendIntervalMs}" />
+                            <div class="detail-field mode-not-daily">
+                                <label>Max Sendeintervall</label>
+                                <div class="input-with-unit">
+                                    <input type="number" step="any" data-field="maxSendIntervalMs" value="${formatMsForUnit(row.maxSendIntervalMs, row.timeUnit)}" />
+                                    <span class="unit-suffix">${formatTimeUnitDisplay(row.timeUnit)}</span>
+                                </div>
+                                <div class="field-help">Spätestens nach diesem Abstand wird erneut geschrieben.</div>
+                            </div>
+                            <div class="detail-field mode-daily-only">
+                                <label>Uhrzeit</label>
+                                <input type="time" data-field="dailyTime" value="${formatDailyTime(row.dailyHour, row.dailyMinute)}" />
+                                <div class="field-help">Wann täglich geschrieben wird. Aktuelle Systemzeit: <span class="system-time-now">${getSystemTimeText()}</span></div>
                             </div>
                             <div class="detail-field">
                                 <label>Default</label>
                                 <input type="number" step="0.1" data-field="defaultValue" value="${row.defaultValue}" />
+                                <div class="field-help">Wert für den Startfall oder wenn kein gültiger Messwert vorliegt.</div>
                             </div>
                         </div>
                         <div class="detail-actions">
-                            <button class="delete-button" title="Channel entfernen">Datenpunkt loeschen</button>
+                            <button class="delete-button" title="Channel entfernen">Datenpunkt löschen</button>
                         </div>
                     </div>
                 </div>
@@ -311,11 +360,24 @@
                 }
                 $card.toggleClass('open');
             });
-            $card.find('[data-field]').on('change keyup', () => syncRowFromDom($card));
+            $card.find('[data-field]').not('[data-field="timeUnit"]').not('[data-field="mode"]').on('change keyup', () => syncRowFromDom($card));
+            $card.find('[data-field="timeUnit"]').on('change', () => handleTimeUnitChange($card));
+            $card.find('[data-field="mode"]').on('change', () => handleModeChange($card));
+            $card.find('.info-icon')
+                .on('mouseenter focus', (event) => {
+                    showInfoTooltip(
+                        $(event.currentTarget),
+                        'Der Firebase Key ist der Zielpfad in Firebase. Beispiel: custom/0_userdata/0/temperatur. "/" erzeugt Unterordner.'
+                    );
+                })
+                .on('mouseleave blur', () => hideInfoTooltip());
             $card.find('.delete-button').on('click', () => confirmRemoveRow(index));
             $card.find('[data-field="sync"]').on('click', (event) => event.stopPropagation());
+            updateModeUi($card, row.mode);
             $body.append($card);
         });
+
+        updateSystemTimeHints();
     }
 
     function renderCheckbox(value) {
@@ -324,9 +386,13 @@
 
     function renderSelect(field, value, options) {
         const optionHtml = options
-            .map((item) => `<option value="${item}" ${item === value ? 'selected' : ''}>${item}</option>`)
+            .map((item) => {
+                const optionValue = typeof item === 'string' ? item : item.value;
+                const optionLabel = typeof item === 'string' ? item : item.label;
+                return `<option value="${optionValue}" ${optionValue === value ? 'selected' : ''}>${optionLabel}</option>`;
+            })
             .join('');
-        return `<select data-field="${field}">${optionHtml}</select>`;
+        return `<select class="browser-default" data-field="${field}">${optionHtml}</select>`;
     }
 
     function syncRowFromDom($tr) {
@@ -343,15 +409,84 @@
         row.minChange = toNumber($tr.find('[data-field="minChange"]').val(), DEFAULT_ROW.minChange);
         row.factor = toNumber($tr.find('[data-field="factor"]').val(), DEFAULT_ROW.factor);
         row.transform = String($tr.find('[data-field="transform"]').val() || DEFAULT_ROW.transform);
+        row.timeUnit = normalizeTimeUnit($tr.find('[data-field="timeUnit"]').val());
+        const dailyTime = parseDailyTime(String($tr.find('[data-field="dailyTime"]').val() || ''), row.dailyHour, row.dailyMinute);
+        row.dailyHour = dailyTime.hour;
+        row.dailyMinute = dailyTime.minute;
         row.round = toNumber($tr.find('[data-field="round"]').val(), DEFAULT_ROW.round);
-        row.minSendIntervalMs = toNumber($tr.find('[data-field="minSendIntervalMs"]').val(), DEFAULT_ROW.minSendIntervalMs);
-        row.maxSendIntervalMs = toNumber($tr.find('[data-field="maxSendIntervalMs"]').val(), DEFAULT_ROW.maxSendIntervalMs);
+        row.minSendIntervalMs = toMsByUnit($tr.find('[data-field="minSendIntervalMs"]').val(), row.timeUnit, DEFAULT_ROW.minSendIntervalMs);
+        row.maxSendIntervalMs = toMsByUnit($tr.find('[data-field="maxSendIntervalMs"]').val(), row.timeUnit, DEFAULT_ROW.maxSendIntervalMs);
         row.defaultValue = normalizeDefaultValue($tr.find('[data-field="defaultValue"]').val());
 
         const $card = $tr.closest('.channel-card');
         $card.find('.summary-field .summary-value-inline').eq(0).text(row.stateId);
         $card.find('.summary-field .summary-value-inline').eq(1).text(row.key);
         updateSummaryDisplay(rows);
+    }
+
+    function handleTimeUnitChange($tr) {
+        const index = Number($tr.attr('data-index'));
+        const row = rows[index];
+        if (!row) {
+            return;
+        }
+
+        const oldUnit = normalizeTimeUnit(row.timeUnit);
+        const newUnit = normalizeTimeUnit($tr.find('[data-field="timeUnit"]').val());
+        const currentMinMs = toMsByUnit($tr.find('[data-field="minSendIntervalMs"]').val(), oldUnit, row.minSendIntervalMs);
+        const currentMaxMs = toMsByUnit($tr.find('[data-field="maxSendIntervalMs"]').val(), oldUnit, row.maxSendIntervalMs);
+
+        $tr.find('[data-field="minSendIntervalMs"]').val(formatMsForUnit(currentMinMs, newUnit));
+        $tr.find('[data-field="maxSendIntervalMs"]').val(formatMsForUnit(currentMaxMs, newUnit));
+        $tr.find('.unit-suffix').text(formatTimeUnitDisplay(newUnit));
+
+        row.timeUnit = newUnit;
+        row.minSendIntervalMs = currentMinMs;
+        row.maxSendIntervalMs = currentMaxMs;
+        syncRowFromDom($tr);
+    }
+
+    function handleModeChange($tr) {
+        const mode = String($tr.find('[data-field="mode"]').val() || DEFAULT_ROW.mode);
+        updateModeUi($tr, mode);
+        syncRowFromDom($tr);
+    }
+
+    function updateModeUi($tr, mode) {
+        const isDaily = mode === 'daily_only';
+        const isChange = mode === 'change';
+        $tr.toggleClass('mode-daily', isDaily);
+        $tr.toggleClass('mode-interval', !isDaily);
+        $tr.find('[data-field="minChange"]').prop('disabled', isChange);
+    }
+
+    function ensureInfoTooltip() {
+        if (infoTooltipEl) {
+            return infoTooltipEl;
+        }
+        infoTooltipEl = $('<div class="firebase-info-tooltip"></div>');
+        $('body').append(infoTooltipEl);
+        return infoTooltipEl;
+    }
+
+    function showInfoTooltip($target, text) {
+        const $tooltip = ensureInfoTooltip();
+        $tooltip.text(text).addClass('visible');
+
+        const offset = $target.offset();
+        if (!offset) {
+            return;
+        }
+
+        const top = offset.top + $target.outerHeight() + 8;
+        const left = Math.max(10, offset.left - 8);
+        $tooltip.css({ top: `${top}px`, left: `${left}px` });
+    }
+
+    function hideInfoTooltip() {
+        if (infoTooltipEl) {
+            infoTooltipEl.removeClass('visible');
+        }
     }
 
     function confirmRemoveRow(index) {
@@ -387,7 +522,7 @@
         updateSummaryDisplay(rows);
         showToast('Datenpunkt aus der Liste entfernt.');
         void saveRows(true).catch((error) => {
-            showToast(`Loeschen fehlgeschlagen: ${error.message}`);
+            showToast(`Löschen fehlgeschlagen: ${error.message}`);
         });
     }
 
@@ -417,6 +552,9 @@
             minChange: DEFAULT_ROW.minChange,
             factor: DEFAULT_ROW.factor,
             transform: DEFAULT_ROW.transform,
+            timeUnit: DEFAULT_ROW.timeUnit,
+            dailyHour: DEFAULT_ROW.dailyHour,
+            dailyMinute: DEFAULT_ROW.dailyMinute,
             round: DEFAULT_ROW.round,
             minSendIntervalMs: DEFAULT_ROW.minSendIntervalMs,
             maxSendIntervalMs: DEFAULT_ROW.maxSendIntervalMs,
@@ -427,7 +565,7 @@
         $('#new-state-id').val('');
         renderRows();
         updateSummaryDisplay(rows);
-        showToast('State-ID hinzugefuegt.');
+        showToast('State-ID hinzugefügt.');
         await saveRows(true);
     }
 
@@ -446,8 +584,11 @@
             }
 
             object.common.custom = object.common.custom || {};
-            if (object.common.custom[namespace]) {
+            const hadInstanceCustom = Boolean(object.common.custom[namespace]);
+            const hadAdapterCustom = Boolean(object.common.custom[ADAPTER]);
+            if (hadInstanceCustom || hadAdapterCustom) {
                 delete object.common.custom[namespace];
+                delete object.common.custom[ADAPTER];
                 await setAnyObject(stateId, object);
             }
         }
@@ -459,7 +600,9 @@
             }
 
             object.common.custom = object.common.custom || {};
-            object.common.custom[namespace] = rowMap.get(row.stateId);
+            const normalizedCustom = rowMap.get(row.stateId);
+            object.common.custom[namespace] = normalizedCustom;
+            object.common.custom[ADAPTER] = normalizedCustom;
             await setAnyObject(row.stateId, object);
         }
 
@@ -472,6 +615,9 @@
             minChange: row.minChange,
             factor: row.factor,
             transform: row.transform,
+            timeUnit: row.timeUnit,
+            dailyHour: row.dailyHour,
+            dailyMinute: row.dailyMinute,
             round: row.round,
             minSendIntervalMs: row.minSendIntervalMs,
             maxSendIntervalMs: row.maxSendIntervalMs,
@@ -495,11 +641,132 @@
             minChange: row.minChange,
             factor: row.factor,
             transform: row.transform,
+            timeUnit: row.timeUnit,
+            dailyHour: row.dailyHour,
+            dailyMinute: row.dailyMinute,
             round: row.round,
             minSendIntervalMs: row.minSendIntervalMs,
             maxSendIntervalMs: row.maxSendIntervalMs,
             defaultValue: normalizeDefaultValue(row.defaultValue)
         };
+    }
+
+    function normalizeTimeUnit(value) {
+        const unit = String(value || '').trim().toLowerCase();
+        if (unit === 'ms' || unit === 's' || unit === 'min' || unit === 'h' || unit === 'd') {
+            return unit;
+        }
+        return DEFAULT_ROW.timeUnit;
+    }
+
+    function normalizeDailyHour(value) {
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed)) {
+            return DEFAULT_ROW.dailyHour;
+        }
+        return Math.max(0, Math.min(23, Math.round(parsed)));
+    }
+
+    function normalizeDailyMinute(value) {
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed)) {
+            return DEFAULT_ROW.dailyMinute;
+        }
+        return Math.max(0, Math.min(59, Math.round(parsed)));
+    }
+
+    function parseDailyTime(value, fallbackHour, fallbackMinute) {
+        const match = String(value || '').match(/^(\d{1,2}):(\d{2})$/);
+        if (!match) {
+            return {
+                hour: normalizeDailyHour(fallbackHour),
+                minute: normalizeDailyMinute(fallbackMinute)
+            };
+        }
+        return {
+            hour: normalizeDailyHour(Number(match[1])),
+            minute: normalizeDailyMinute(Number(match[2]))
+        };
+    }
+
+    function formatDailyTime(hour, minute) {
+        const normalizedHour = String(normalizeDailyHour(hour)).padStart(2, '0');
+        const normalizedMinute = String(normalizeDailyMinute(minute)).padStart(2, '0');
+        return `${normalizedHour}:${normalizedMinute}`;
+    }
+
+    function unitToMs(unit) {
+        switch (unit) {
+            case 'd':
+                return 86400000;
+            case 'h':
+                return 3600000;
+            case 'min':
+                return 60000;
+            case 's':
+                return 1000;
+            case 'ms':
+            default:
+                return 1;
+        }
+    }
+
+    function toMsByUnit(value, unit, fallbackMs) {
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed)) {
+            return fallbackMs;
+        }
+        return Math.max(0, Math.round(parsed * unitToMs(unit)));
+    }
+
+    function formatMsForUnit(msValue, unit) {
+        const numericMs = Number(msValue);
+        if (!Number.isFinite(numericMs)) {
+            return 0;
+        }
+        const factor = unitToMs(normalizeTimeUnit(unit));
+        const converted = numericMs / factor;
+        const rounded = Math.round(converted * 1000000000) / 1000000000;
+        return Number.isFinite(rounded) ? rounded : converted;
+    }
+
+    function formatTimeUnitDisplay(unit) {
+        const normalized = normalizeTimeUnit(unit);
+        if (normalized === 'ms') {
+            return 'Millisekunden';
+        }
+        if (normalized === 's') {
+            return 'Sekunden';
+        }
+        if (normalized === 'min') {
+            return 'Minuten';
+        }
+        if (normalized === 'h') {
+            return 'Stunden';
+        }
+        if (normalized === 'd') {
+            return 'Tage';
+        }
+        return normalized;
+    }
+
+    function getSystemTimeText() {
+        const now = new Date();
+        const date = now.toLocaleDateString('de-AT');
+        const time = now.toLocaleTimeString('de-AT', { hour12: false });
+        return `${date} ${time}`;
+    }
+
+    function updateSystemTimeHints() {
+        $('.system-time-now').text(getSystemTimeText());
+    }
+
+    function startSystemTimeTicker() {
+        if (systemTimeIntervalId) {
+            clearInterval(systemTimeIntervalId);
+        }
+        updateSystemTimeHints();
+        systemTimeIntervalId = setInterval(() => updateSystemTimeHints(), 1000);
     }
 
     function updateSummary(instanceObject, currentRows) {
@@ -541,7 +808,12 @@
     }
 
     function objectIdToFirebaseKey(objectId) {
-        return `custom.${objectId.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '')}`;
+        const normalizedPath = String(objectId)
+            .split('.')
+            .map((part) => part.trim().replace(/[.#$\[\]/]+/g, '_').replace(/^_+|_+$/g, ''))
+            .filter(Boolean)
+            .join('/');
+        return normalizedPath ? `custom/${normalizedPath}` : 'custom/value';
     }
 
     function normalizeDefaultValue(value) {
