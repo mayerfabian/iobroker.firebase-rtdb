@@ -1,8 +1,12 @@
 {
   "common": {
     "name": "firebase-history-sync",
-    "version": "0.0.2",
+    "version": "0.0.3",
     "news": {
+      "0.0.3": {
+        "en": "Added a dedicated Firebase Sync admin tab and removed auto-filled default channels from instance storage.",
+        "de": "Eigener Firebase-Sync-Admin-Tab hinzugefuegt und automatisch vorbefuellte Standard-Channels aus der Instanzspeicherung entfernt."
+      },
       "0.0.2": {
         "en": "Added custom object icon integration and improved admin metadata for object-level selection.",
         "de": "Custom-Objekt-Icon-Integration und Admin-Metadaten fuer objektbezogene Auswahl verbessert."
@@ -40,12 +44,22 @@
     "mode": "daemon",
     "type": "general",
     "supportCustoms": true,
+    "adminTab": {
+      "name": {
+        "en": "Firebase Sync",
+        "de": "Firebase Sync"
+      },
+      "ignoreConfigUpdate": true,
+      "singleton": false,
+      "fa-icon": "</i><img style='width:24px;margin-bottom:-6px;' src='/adapter/firebase-history-sync/firebase-history-sync.svg'><i>"
+    },
     "compact": true,
     "connectionType": "cloud",
     "dataSource": "push",
     "adminUI": {
       "config": "json",
-      "custom": "json"
+      "custom": "json",
+      "tab": "materialize"
     },
     "materialize": true,
     "dependencies": [

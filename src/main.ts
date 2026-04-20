@@ -1,5 +1,5 @@
 import * as utils from '@iobroker/adapter-core';
-import { getDefaultChannelConfig, mergeChannelOverrides } from './channels';
+import { DEFAULT_CHANNELS, mergeChannelOverrides } from './channels';
 import { FirebaseRtdbClient } from './firebaseRtdb';
 import { SyncRuntime } from './runtime';
 import type { AdapterNativeConfig, ChannelConfig, CustomStateConfig, FirebaseServiceAccount } from './types';
@@ -22,7 +22,7 @@ class FirebaseHistorySyncAdapter extends utils.Adapter {
     await this.setStateAsync('info.connection', false, true);
 
     const config = this.config as AdapterNativeConfig;
-    await this.ensureChannelConfigDefaults(config);
+    await this.cleanupStoredChannels(config);
 
     const databaseUrl = config.databaseUrl?.trim();
     const serviceAccountJson = await this.readServiceAccountJson(config);
@@ -107,44 +107,35 @@ class FirebaseHistorySyncAdapter extends utils.Adapter {
   }
 
   private async mergeCustomChannelsIntoConfig(config: AdapterNativeConfig, customChannels: ChannelConfig[]): Promise<void> {
-    if (!customChannels.length) {
-      return;
-    }
-
     const instanceObject = await this.getForeignObjectAsync(`system.adapter.${this.namespace}`);
     if (!instanceObject) {
       return;
     }
 
     const existingChannels = Array.isArray(config.channels) ? config.channels : [];
-    const byStateId = new Map(existingChannels.filter((channel) => channel.stateId).map((channel) => [channel.stateId, channel]));
-    let changed = false;
-
-    for (const customChannel of customChannels) {
-      const existing = byStateId.get(customChannel.stateId);
-      if (!existing) {
-        existingChannels.push(customChannel);
-        changed = true;
-        continue;
+    const manualChannels = existingChannels.filter((channel) => {
+      if (!channel?.stateId || !channel?.key) {
+        return false;
       }
 
-      if (existing.key !== customChannel.key || existing.sync !== customChannel.sync || existing.enabled !== customChannel.enabled) {
-        Object.assign(existing, customChannel);
-        changed = true;
-      }
-    }
+      return !customChannels.some((customChannel) => customChannel.stateId === channel.stateId);
+    });
+    const storedChannels = [
+      ...manualChannels.filter((channel) => channel.enabled !== false && channel.sync !== false),
+      ...customChannels.filter((channel) => channel.enabled !== false && channel.sync !== false)
+    ];
 
-    if (!changed) {
+    if (JSON.stringify(existingChannels) === JSON.stringify(storedChannels)) {
       return;
     }
 
     instanceObject.native = {
       ...instanceObject.native,
-      channels: existingChannels
+      channels: storedChannels
     };
 
     await this.setForeignObjectAsync(instanceObject._id, instanceObject);
-    config.channels = existingChannels;
+    config.channels = storedChannels;
   }
 
   private async readServiceAccountJson(config: AdapterNativeConfig): Promise<string> {
@@ -179,24 +170,39 @@ class FirebaseHistorySyncAdapter extends utils.Adapter {
     return configuredValue;
   }
 
-  private async ensureChannelConfigDefaults(config: AdapterNativeConfig): Promise<void> {
-    if (Array.isArray(config.channels) && config.channels.length > 0) {
-      return;
-    }
-
+  private async cleanupStoredChannels(config: AdapterNativeConfig): Promise<void> {
     const instanceObject = await this.getForeignObjectAsync(`system.adapter.${this.namespace}`);
     if (!instanceObject) {
       return;
     }
 
+    const existingChannels = Array.isArray(config.channels) ? config.channels : [];
+    const defaultKeys = new Set(DEFAULT_CHANNELS.map((channel) => channel.key));
+    const cleanedChannels = existingChannels.filter((channel) => {
+      if (!channel?.key || !channel?.stateId) {
+        return false;
+      }
+
+      if (channel.enabled === false || channel.sync === false) {
+        return false;
+      }
+
+      return !defaultKeys.has(channel.key);
+    });
+
+    if (JSON.stringify(existingChannels) === JSON.stringify(cleanedChannels)) {
+      config.channels = cleanedChannels;
+      return;
+    }
+
     instanceObject.native = {
       ...instanceObject.native,
-      channels: getDefaultChannelConfig()
+      channels: cleanedChannels
     };
 
     await this.setForeignObjectAsync(instanceObject._id, instanceObject);
-    config.channels = instanceObject.native.channels as AdapterNativeConfig['channels'];
-    this.log.info('Initialized adapter channel configuration with built-in defaults');
+    config.channels = cleanedChannels;
+    this.log.info('Removed built-in default channels from stored adapter configuration');
   }
 
   private onUnload(callback: () => void): void {

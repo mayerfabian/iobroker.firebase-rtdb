@@ -25,7 +25,8 @@ The MVP already reserves native adapter settings for:
 - `dailyWriteHour` / `dailyWriteMinute`: time for daily-only fields
 - `channels`: future UI override list for state IDs, thresholds and intervals
 
-Admin UI configuration will be added in the next step.
+The adapter now has a dedicated admin tab `Firebase Sync` for channel management.
+The instance configuration only keeps global Firebase and runtime settings.
 
 ## Debugging
 
@@ -44,3 +45,10 @@ Useful states:
 - `debug.skippedCount`
 
 Set the adapter log level to `debug` in ioBroker to see skipped writes, delayed writes, deltas, triggers, and write reasons.
+
+## Channel Management
+
+- Add or edit Firebase channels in the adapter admin tab `Firebase Sync`
+- The tab lists only states that are actually configured for this adapter
+- Changes in the tab are stored as object custom settings and are applied after adapter restart
+- The object custom icon remains available in `Objects` for per-state activation

@@ -1,6 +1,6 @@
 {
   "name": "iobroker.firebase-history-sync",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "ioBroker adapter to sync selected states to Firebase Realtime Database history and current snapshots.",
   "author": "Fabian Mayer",
   "license": "MIT",
@@ -47,7 +47,8 @@
   "iobroker": {
     "adminUI": {
       "config": "json",
-      "custom": "json"
+      "custom": "json",
+      "tab": "materialize"
     }
   }
 }

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Firebase Sync</title>
+    <link rel="stylesheet" href="../../lib/css/materialize.css" />
+    <link rel="stylesheet" href="tab_m.css" />
+    <script type="text/javascript" src="../../lib/js/jquery-3.2.1.min.js"></script>
+    <script type="text/javascript" src="../../lib/js/materialize.js"></script>
+    <script>
+        (function () {
+            const script = document.createElement('script');
+            window.registerSocketOnLoad = function (cb) {
+                window.socketLoadedHandler = cb;
+            };
+            script.onload = function () {
+                if (typeof window.socketLoadedHandler === 'function') {
+                    window.socketLoadedHandler();
+                }
+            };
+            script.src =
+                window.location.port === '3000'
+                    ? `${window.location.protocol}//${window.location.hostname}:8081/lib/js/socket.io.js`
+                    : '../../lib/js/socket.io.js';
+            document.head.appendChild(script);
+        })();
+    </script>
+    <script type="text/javascript" src="tab_m.js"></script>
+</head>
+<body class="m">
+    <div class="page">
+        <div class="header-panel">
+            <div class="header-brand">
+                <img src="firebase-history-sync.svg" alt="Firebase" class="brand-icon" />
+                <div>
+                    <h1>Firebase Sync</h1>
+                    <div class="header-subtitle" id="instance-label">Instanz wird geladen...</div>
+                </div>
+            </div>
+            <div class="header-actions">
+                <a class="waves-effect waves-light btn" id="reload-button">Neu laden</a>
+                <a class="waves-effect waves-light btn" id="save-button">Speichern</a>
+            </div>
+        </div>
+
+        <div class="summary-grid">
+            <div class="summary-card">
+                <div class="summary-label">Aktive Channels</div>
+                <div class="summary-value" id="summary-count">0</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-label">Sync aktiv</div>
+                <div class="summary-value" id="summary-sync-count">0</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-label">Firebase URL</div>
+                <div class="summary-text" id="summary-database-url">-</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-label">Dry Run</div>
+                <div class="summary-value" id="summary-dry-run">-</div>
+            </div>
+        </div>
+
+        <div class="info-banner">
+            Hier werden nur States gelistet, die fuer diesen Adapter wirklich als Firebase-Channel aktiviert sind.
+            Neue Eintraege koennen hier angelegt werden. Aenderungen werden nach einem Adapter-Neustart wirksam.
+        </div>
+
+        <div class="add-row-panel">
+            <div class="input-field state-id-field">
+                <input type="text" id="new-state-id" />
+                <label for="new-state-id">State-ID hinzufuegen</label>
+            </div>
+            <a class="waves-effect waves-light btn" id="browse-button">Objekte waehlen</a>
+            <a class="waves-effect waves-light btn" id="add-button">Hinzufuegen</a>
+        </div>
+
+        <div class="accordion-list" id="channel-table-body">
+        </div>
+    </div>
+
+    <div id="object-picker-modal" class="modal picker-modal">
+        <div class="modal-content">
+            <h4>Datenpunkte auswaehlen</h4>
+            <div class="picker-toolbar">
+                <div class="input-field picker-search">
+                    <input type="text" id="picker-search" />
+                    <label for="picker-search">Suche nach State-ID</label>
+                </div>
+                <a class="waves-effect waves-light btn" id="picker-select-visible">Sichtbare auswaehlen</a>
+                <a class="waves-effect waves-light btn" id="picker-clear-visible">Sichtbare abwaehlen</a>
+            </div>
+            <div class="picker-summary" id="picker-summary">0 sichtbar, 0 markiert</div>
+            <div class="picker-list" id="picker-list"></div>
+        </div>
+        <div class="modal-footer">
+            <a href="#!" class="modal-close waves-effect btn-flat">Abbrechen</a>
+            <a href="#!" class="waves-effect waves-light btn" id="picker-apply">Auswahl uebernehmen</a>
+        </div>
+    </div>
+
+    <div id="delete-confirm-modal" class="modal delete-modal">
+        <div class="modal-content">
+            <h4>Datenpunkt loeschen</h4>
+            <p id="delete-confirm-text">Soll dieser Datenpunkt wirklich entfernt werden?</p>
+            <p>
+                <label>
+                    <input type="checkbox" id="delete-confirm-session" />
+                    <span>Diese Sitzung nicht mehr fragen</span>
+                </label>
+            </p>
+        </div>
+        <div class="modal-footer">
+            <a href="#!" class="modal-close waves-effect btn-flat">Abbrechen</a>
+            <a href="#!" class="waves-effect waves-light btn red" id="delete-confirm-apply">Loeschen</a>
+        </div>
+    </div>
+</body>
+</html>

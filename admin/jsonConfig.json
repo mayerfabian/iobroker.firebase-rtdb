@@ -1,198 +1,50 @@
 {
-  "type": "tabs",
+  "type": "panel",
   "items": {
-    "main": {
-      "type": "panel",
-      "label": "Firebase",
-      "items": {
-        "databaseUrl": {
-          "type": "text",
-          "label": "Firebase RTDB URL",
-          "sm": 12,
-          "validator": "data.databaseUrl || 'Firebase RTDB URL is required'"
-        },
-        "rootPath": {
-          "type": "text",
-          "label": "Root path",
-          "sm": 12,
-          "default": "home"
-        },
-        "serviceAccountJson": {
-          "type": "password",
-          "label": "Service Account JSON",
-          "sm": 12
-        },
-        "dryRun": {
-          "type": "checkbox",
-          "label": "Dry run - log writes without sending to Firebase",
-          "sm": 12,
-          "default": true
-        },
-        "dailyWriteHour": {
-          "type": "number",
-          "label": "Daily write hour",
-          "min": 0,
-          "max": 23,
-          "sm": 6
-        },
-        "dailyWriteMinute": {
-          "type": "number",
-          "label": "Daily write minute",
-          "min": 0,
-          "max": 59,
-          "sm": 6
-        }
-      }
+    "_channelNotice1": {
+      "type": "staticText",
+      "text": "Die Channel-Verwaltung liegt jetzt im eigenen Admin-Bereich \"Firebase Sync\" links im Adapter."
     },
-    "channels": {
-      "type": "panel",
-      "label": "Channels",
-      "items": {
-        "_channelNotice1": {
-          "type": "staticText",
-          "text": "Channels are initialized with the built-in defaults on first adapter start. Disable channels that do not exist on this ioBroker host or select another state ID."
-        },
-        "_channelNotice2": {
-          "type": "staticText",
-          "text": "A full object browser picker will be added as a custom admin component next. For now paste or edit the object ID in the State ID column."
-        },
-        "channels": {
-          "type": "table",
-          "label": "Data channels",
-          "sm": 12,
-          "noDelete": true,
-          "compact": true,
-          "items": [
-            {
-              "type": "checkbox",
-              "title": "Listed",
-              "attr": "enabled",
-              "width": 70,
-              "default": true,
-              "filter": false,
-              "sort": true
-            },
-            {
-              "type": "checkbox",
-              "title": "Sync",
-              "attr": "sync",
-              "width": 70,
-              "default": true,
-              "filter": false,
-              "sort": true
-            },
-            {
-              "type": "text",
-              "title": "Firebase field",
-              "attr": "key",
-              "width": 230,
-              "readOnly": true,
-              "filter": true,
-              "sort": true
-            },
-            {
-              "type": "text",
-              "title": "State ID",
-              "attr": "stateId",
-              "width": 420,
-              "filter": true,
-              "sort": true
-            },
-            {
-              "type": "number",
-              "title": "Default",
-              "attr": "defaultValue",
-              "width": 110,
-              "filter": false,
-              "sort": true
-            },
-            {
-              "type": "select",
-              "title": "Mode",
-              "attr": "mode",
-              "width": 130,
-              "options": [
-                {
-                  "label": "threshold",
-                  "value": "threshold"
-                },
-                {
-                  "label": "change",
-                  "value": "change"
-                },
-                {
-                  "label": "daily_only",
-                  "value": "daily_only"
-                }
-              ],
-              "filter": false,
-              "sort": true
-            },
-            {
-              "type": "number",
-              "title": "minChange",
-              "attr": "minChange",
-              "width": 110,
-              "filter": false,
-              "sort": true
-            },
-            {
-              "type": "number",
-              "title": "Factor",
-              "attr": "factor",
-              "width": 90,
-              "filter": false,
-              "sort": true
-            },
-            {
-              "type": "select",
-              "title": "Transform",
-              "attr": "transform",
-              "width": 140,
-              "options": [
-                {
-                  "label": "none",
-                  "value": "none"
-                },
-                {
-                  "label": "positive_only",
-                  "value": "positive_only"
-                },
-                {
-                  "label": "boolean",
-                  "value": "boolean"
-                }
-              ],
-              "filter": false,
-              "sort": true
-            },
-            {
-              "type": "number",
-              "title": "Round",
-              "attr": "round",
-              "width": 90,
-              "filter": false,
-              "sort": true
-            },
-            {
-              "type": "number",
-              "title": "Min ms",
-              "attr": "minSendIntervalMs",
-              "width": 120,
-              "filter": false,
-              "sort": true
-            },
-            {
-              "type": "number",
-              "title": "Max ms",
-              "attr": "maxSendIntervalMs",
-              "width": 120,
-              "filter": false,
-              "sort": true
-            }
-          ]
-        }
-      }
+    "_channelNotice2": {
+      "type": "staticText",
+      "text": "In den Instanz-Einstellungen bleiben nur globale Firebase- und Laufzeitwerte."
+    },
+    "databaseUrl": {
+      "type": "text",
+      "label": "Firebase RTDB URL",
+      "sm": 12,
+      "validator": "data.databaseUrl || 'Firebase RTDB URL is required'"
+    },
+    "rootPath": {
+      "type": "text",
+      "label": "Root path",
+      "sm": 12,
+      "default": "home"
+    },
+    "serviceAccountJson": {
+      "type": "password",
+      "label": "Service Account JSON",
+      "sm": 12
+    },
+    "dryRun": {
+      "type": "checkbox",
+      "label": "Dry run - log writes without sending to Firebase",
+      "sm": 12,
+      "default": true
+    },
+    "dailyWriteHour": {
+      "type": "number",
+      "label": "Daily write hour",
+      "min": 0,
+      "max": 23,
+      "sm": 6
+    },
+    "dailyWriteMinute": {
+      "type": "number",
+      "label": "Daily write minute",
+      "min": 0,
+      "max": 59,
+      "sm": 6
     }
   }
 }
