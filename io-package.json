@@ -1,0 +1,210 @@
+{
+  "common": {
+    "name": "firebase-history-sync",
+    "version": "0.0.2",
+    "news": {
+      "0.0.2": {
+        "en": "Added custom object icon integration and improved admin metadata for object-level selection.",
+        "de": "Custom-Objekt-Icon-Integration und Admin-Metadaten fuer objektbezogene Auswahl verbessert."
+      },
+      "0.0.1": {
+        "en": "Initial MVP scaffold with Firebase RTDB current and history sync.",
+        "de": "Initiales MVP-Grundgeruest mit Firebase RTDB Current- und History-Sync."
+      }
+    },
+    "titleLang": {
+      "en": "Firebase RTDB History Sync",
+      "de": "Firebase RTDB History Sync"
+    },
+    "desc": {
+      "en": "Collects selected ioBroker states, throttles writes, and syncs current and history data to Firebase Realtime Database.",
+      "de": "Sammelt ausgewaehlte ioBroker States, drosselt Writes und synchronisiert Current- und History-Daten in Firebase Realtime Database."
+    },
+    "authors": [
+      "Fabian Mayer"
+    ],
+    "keywords": [
+      "firebase",
+      "rtdb",
+      "history",
+      "sync"
+    ],
+    "license": "MIT",
+    "platform": "Javascript/Node.js",
+    "main": "build/main.js",
+    "icon": "firebase-history-sync.svg",
+    "enabled": true,
+    "extIcon": "https://raw.githubusercontent.com/fabianmayer/iobroker.firebase-history-sync/main/admin/firebase-history-sync.svg",
+    "readme": "https://github.com/fabianmayer/iobroker.firebase-history-sync/blob/main/README.md",
+    "loglevel": "info",
+    "mode": "daemon",
+    "type": "general",
+    "supportCustoms": true,
+    "compact": true,
+    "connectionType": "cloud",
+    "dataSource": "push",
+    "adminUI": {
+      "config": "json",
+      "custom": "json"
+    },
+    "materialize": true,
+    "dependencies": [
+      {
+        "js-controller": ">=5.0.0"
+      }
+    ],
+    "tier": 3,
+    "restartAdapters": []
+  },
+  "native": {
+    "databaseUrl": "",
+    "rootPath": "home",
+    "serviceAccountJson": "",
+    "dryRun": true,
+    "dailyWriteHour": 0,
+    "dailyWriteMinute": 10,
+    "channels": []
+  },
+  "encryptedNative": [
+    "serviceAccountJson"
+  ],
+  "protectedNative": [
+    "serviceAccountJson"
+  ],
+  "objects": [],
+  "instanceObjects": [
+    {
+      "_id": "debug",
+      "type": "channel",
+      "common": {
+        "name": "Debug"
+      },
+      "native": {}
+    },
+    {
+      "_id": "debug.lastTrigger",
+      "type": "state",
+      "common": {
+        "role": "text",
+        "name": "Last trigger",
+        "type": "string",
+        "read": true,
+        "write": false,
+        "def": ""
+      },
+      "native": {}
+    },
+    {
+      "_id": "debug.lastSkipped",
+      "type": "state",
+      "common": {
+        "role": "text",
+        "name": "Last skipped write",
+        "type": "string",
+        "read": true,
+        "write": false,
+        "def": ""
+      },
+      "native": {}
+    },
+    {
+      "_id": "debug.lastWriteReason",
+      "type": "state",
+      "common": {
+        "role": "text",
+        "name": "Last write reason",
+        "type": "string",
+        "read": true,
+        "write": false,
+        "def": ""
+      },
+      "native": {}
+    },
+    {
+      "_id": "debug.lastWritePath",
+      "type": "state",
+      "common": {
+        "role": "text",
+        "name": "Last Firebase history write path",
+        "type": "string",
+        "read": true,
+        "write": false,
+        "def": ""
+      },
+      "native": {}
+    },
+    {
+      "_id": "debug.lastError",
+      "type": "state",
+      "common": {
+        "role": "text",
+        "name": "Last error",
+        "type": "string",
+        "read": true,
+        "write": false,
+        "def": ""
+      },
+      "native": {}
+    },
+    {
+      "_id": "debug.writeCount",
+      "type": "state",
+      "common": {
+        "role": "value",
+        "name": "Successful write count",
+        "type": "number",
+        "read": true,
+        "write": false,
+        "def": 0
+      },
+      "native": {}
+    },
+    {
+      "_id": "debug.skippedCount",
+      "type": "state",
+      "common": {
+        "role": "value",
+        "name": "Skipped write count",
+        "type": "number",
+        "read": true,
+        "write": false,
+        "def": 0
+      },
+      "native": {}
+    },
+    {
+      "_id": "info",
+      "type": "channel",
+      "common": {
+        "name": "Information"
+      },
+      "native": {}
+    },
+    {
+      "_id": "info.connection",
+      "type": "state",
+      "common": {
+        "role": "indicator.connected",
+        "name": "Firebase connection status",
+        "type": "boolean",
+        "read": true,
+        "write": false,
+        "def": false
+      },
+      "native": {}
+    },
+    {
+      "_id": "info.lastWrite",
+      "type": "state",
+      "common": {
+        "role": "date",
+        "name": "Last successful Firebase write timestamp",
+        "type": "number",
+        "read": true,
+        "write": false,
+        "def": 0
+      },
+      "native": {}
+    }
+  ]
+}

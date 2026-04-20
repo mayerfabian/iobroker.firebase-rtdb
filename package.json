@@ -1,0 +1,53 @@
+{
+  "name": "iobroker.firebase-history-sync",
+  "version": "0.0.2",
+  "description": "ioBroker adapter to sync selected states to Firebase Realtime Database history and current snapshots.",
+  "author": "Fabian Mayer",
+  "license": "MIT",
+  "keywords": [
+    "ioBroker",
+    "firebase",
+    "realtime-database",
+    "history",
+    "sync"
+  ],
+  "homepage": "https://github.com/fabianmayer/iobroker.firebase-history-sync",
+  "bugs": {
+    "url": "https://github.com/fabianmayer/iobroker.firebase-history-sync/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fabianmayer/iobroker.firebase-history-sync.git"
+  },
+  "main": "build/main.js",
+  "types": "build/main.d.ts",
+  "files": [
+    "admin",
+    "build",
+    "io-package.json",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "watch": "tsc -w -p tsconfig.json",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@iobroker/adapter-core": "^3.2.3",
+    "google-auth-library": "^9.15.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "iobroker": {
+    "adminUI": {
+      "config": "json",
+      "custom": "json"
+    }
+  }
+}

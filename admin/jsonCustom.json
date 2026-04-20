@@ -1,0 +1,102 @@
+{
+  "type": "panel",
+  "items": {
+    "enabled": {
+      "type": "checkbox",
+      "label": "Show this state in Firebase adapter channel list",
+      "default": true,
+      "sm": 12
+    },
+    "sync": {
+      "type": "checkbox",
+      "label": "Synchronize this state to Firebase",
+      "default": false,
+      "sm": 12
+    },
+    "key": {
+      "type": "text",
+      "label": "Firebase field path",
+      "placeholder": "custom.myState.value",
+      "sm": 12,
+      "help": "Dot-separated field path below /home/current and /home/history. Leave empty to generate a custom.* path from the object ID."
+    },
+    "defaultValue": {
+      "type": "number",
+      "label": "Default value when state is missing",
+      "sm": 6
+    },
+    "mode": {
+      "type": "select",
+      "label": "Write mode",
+      "default": "threshold",
+      "sm": 6,
+      "options": [
+        {
+          "label": "threshold",
+          "value": "threshold"
+        },
+        {
+          "label": "change",
+          "value": "change"
+        },
+        {
+          "label": "daily_only",
+          "value": "daily_only"
+        }
+      ]
+    },
+    "minChange": {
+      "type": "number",
+      "label": "Minimum change",
+      "default": 0,
+      "sm": 6
+    },
+    "factor": {
+      "type": "number",
+      "label": "Factor",
+      "default": 1,
+      "sm": 6
+    },
+    "transform": {
+      "type": "select",
+      "label": "Transform",
+      "default": "none",
+      "sm": 6,
+      "options": [
+        {
+          "label": "none",
+          "value": "none"
+        },
+        {
+          "label": "positive_only",
+          "value": "positive_only"
+        },
+        {
+          "label": "boolean",
+          "value": "boolean"
+        }
+      ]
+    },
+    "round": {
+      "type": "number",
+      "label": "Round decimals",
+      "default": 1,
+      "min": 0,
+      "sm": 6
+    },
+    "minSendIntervalMs": {
+      "type": "number",
+      "label": "Minimum send interval ms",
+      "default": 10000,
+      "min": 0,
+      "sm": 6
+    },
+    "maxSendIntervalMs": {
+      "type": "number",
+      "label": "Maximum send interval ms",
+      "default": 900000,
+      "min": 0,
+      "sm": 6
+    }
+  }
+}
