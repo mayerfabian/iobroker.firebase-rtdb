@@ -695,21 +695,61 @@
             channelCount: instanceObject.native.channels.length
         });
 
-        debugLog('saveRows defers state custom reconciliation to backend polling', {
+        debugLog('saveRows applies direct state custom cleanup', {
             namespace,
             stateIdsToRemove: [...stateIdsToRemove],
             rowStateIds: rows.map((row) => row.stateId)
         });
+        await removeStateCustomConfig([...stateIdsToRemove]);
 
         removedStateIds = new Set();
         initiallyLoadedStateIds = new Set(rows.map((row) => row.stateId));
         updateSummary(instanceObject, rows);
         renderRows();
         if (!silent) {
-            showToast('Channels gespeichert. Backend synchronisiert die Objektkonfiguration in Kürze.');
+            showToast('Channels gespeichert. Objektkonfiguration wurde aktualisiert.');
         }
         setStatus(`Instanz ${namespace} gespeichert`);
         debugLog('saveRows finished successfully');
+    }
+
+    async function removeStateCustomConfig(stateIds) {
+        for (const stateId of stateIds) {
+            const object = await getAnyObject(stateId);
+            if (!object || object.type !== 'state' || !object.common) {
+                continue;
+            }
+
+            const customMap = object.common.custom || {};
+            const namespaceCustom = customMap[namespace];
+            const legacyCustom = customMap[ADAPTER];
+            if (!namespaceCustom && !legacyCustom) {
+                continue;
+            }
+
+            const nextObject = cloneObjectForWrite(object);
+            nextObject.common = nextObject.common || {};
+            nextObject.common.custom = nextObject.common.custom || {};
+            const disabledCustom = {
+                enabled: false,
+                sync: false,
+                key: (namespaceCustom && namespaceCustom.key) || (legacyCustom && legacyCustom.key) || objectIdToFirebaseKey(stateId),
+                mode: (namespaceCustom && namespaceCustom.mode) || (legacyCustom && legacyCustom.mode) || DEFAULT_ROW.mode,
+                minChange: (namespaceCustom && namespaceCustom.minChange) ?? (legacyCustom && legacyCustom.minChange) ?? DEFAULT_ROW.minChange,
+                factor: (namespaceCustom && namespaceCustom.factor) ?? (legacyCustom && legacyCustom.factor) ?? DEFAULT_ROW.factor,
+                transform: (namespaceCustom && namespaceCustom.transform) || (legacyCustom && legacyCustom.transform) || DEFAULT_ROW.transform,
+                round: (namespaceCustom && namespaceCustom.round) ?? (legacyCustom && legacyCustom.round) ?? DEFAULT_ROW.round,
+                minSendIntervalMs: (namespaceCustom && namespaceCustom.minSendIntervalMs) ?? (legacyCustom && legacyCustom.minSendIntervalMs) ?? DEFAULT_ROW.minSendIntervalMs,
+                maxSendIntervalMs: (namespaceCustom && namespaceCustom.maxSendIntervalMs) ?? (legacyCustom && legacyCustom.maxSendIntervalMs) ?? DEFAULT_ROW.maxSendIntervalMs,
+                dailyHour: normalizeDailyHour((namespaceCustom && namespaceCustom.dailyHour) ?? (legacyCustom && legacyCustom.dailyHour) ?? DEFAULT_ROW.dailyHour),
+                dailyMinute: normalizeDailyMinute((namespaceCustom && namespaceCustom.dailyMinute) ?? (legacyCustom && legacyCustom.dailyMinute) ?? DEFAULT_ROW.dailyMinute),
+                defaultValue: (namespaceCustom && namespaceCustom.defaultValue) ?? (legacyCustom && legacyCustom.defaultValue) ?? null
+            };
+            nextObject.common.custom[namespace] = disabledCustom;
+            nextObject.common.custom[ADAPTER] = Object.assign({}, disabledCustom);
+
+            await setAnyObject(stateId, nextObject);
+        }
     }
 
     function syncAllRowsFromDom() {
@@ -1000,7 +1040,7 @@
     }
 
     function setAnyObject(id, obj) {
-        const command = isSystemObject(id) ? 'setObject' : 'setForeignObject';
+        const command = 'setObject';
         return new Promise((resolve, reject) => {
             const startedAt = Date.now();
             const timeout = setTimeout(() => {

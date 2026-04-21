@@ -30,7 +30,54 @@ class FirebaseHistorySyncAdapter extends utils.Adapter {
     await this.setStateAsync('info.connection', false, true);
     await this.subscribeForeignObjectsAsync('*');
     await this.initializeRuntime();
+    await this.cleanupDisabledCustomEntriesOnStartup();
     this.startConfigPolling();
+  }
+
+  private async cleanupDisabledCustomEntriesOnStartup(): Promise<void> {
+    const customView = await this.getObjectViewAsync('system', 'custom', {
+      startkey: '',
+      endkey: '\u9999'
+    });
+
+    let cleanedCount = 0;
+    for (const row of customView.rows) {
+      const customMap = row.value as Record<string, CustomStateConfig | undefined> | undefined;
+      const namespaceCustom = customMap?.[this.namespace];
+      const legacyCustom = customMap?.[this.name];
+
+      if (!namespaceCustom && !legacyCustom) {
+        continue;
+      }
+
+      const hasEnabledEntry = Boolean(namespaceCustom?.enabled || legacyCustom?.enabled);
+      if (hasEnabledEntry) {
+        continue;
+      }
+
+      const object = await this.getForeignObjectAsync(row.id);
+      if (!object || object.type !== 'state' || !object.common?.custom) {
+        continue;
+      }
+
+      const nextObject = JSON.parse(JSON.stringify(object)) as ioBroker.StateObject;
+      delete nextObject.common.custom?.[this.namespace];
+      delete nextObject.common.custom?.[this.name];
+      if (nextObject.common.custom && !Object.keys(nextObject.common.custom).length) {
+        delete nextObject.common.custom;
+      }
+
+      if (JSON.stringify(object.common.custom ?? null) === JSON.stringify(nextObject.common.custom ?? null)) {
+        continue;
+      }
+
+      await this.setForeignObjectAsync(row.id, nextObject, this.adminWriteOptions);
+      cleanedCount++;
+    }
+
+    if (cleanedCount > 0) {
+      this.log.info(`Cleaned ${cleanedCount} disabled Firebase custom object entries on startup`);
+    }
   }
 
   private async initializeRuntime(): Promise<void> {
@@ -110,7 +157,7 @@ class FirebaseHistorySyncAdapter extends utils.Adapter {
     }
 
     const customMap = obj.common?.custom as Record<string, CustomStateConfig | undefined> | undefined;
-    return Boolean(customMap?.[this.namespace] || customMap?.[this.name]);
+    return Boolean(customMap?.[this.namespace]?.enabled || customMap?.[this.name]?.enabled);
   }
 
   private scheduleRuntimeReload(reason: string): void {
@@ -153,7 +200,7 @@ class FirebaseHistorySyncAdapter extends utils.Adapter {
 
     this.configPollTimer = setInterval(() => {
       void this.pollInstanceConfig();
-    }, 2000);
+    }, 10000);
   }
 
   private async pollInstanceConfig(): Promise<void> {
@@ -192,21 +239,38 @@ class FirebaseHistorySyncAdapter extends utils.Adapter {
 
     if (obj.command === 'reconcileCustoms') {
       void this.handleReconcileCustomsMessage(obj);
+      return;
     }
+
+    
   }
 
   private async handleReconcileCustomsMessage(obj: ioBroker.Message): Promise<void> {
-    try {
-      const instanceObject = await this.getForeignObjectAsync(`system.adapter.${this.namespace}`);
-      await this.reconcileStateCustomsFromInstanceObject(instanceObject);
-      this.sendTo(obj.from, obj.command, { ok: true }, obj.callback);
-    } catch (error) {
-      this.log.error(`Could not reconcile Firebase custom state config: ${(error as Error).message}`);
-      this.sendTo(obj.from, obj.command, { ok: false, error: (error as Error).message }, obj.callback);
-    }
+    const messagePayload = obj.message as { stateIdsToRemove?: unknown } | undefined;
+    const removalPayload = messagePayload?.stateIdsToRemove;
+    const requestedRemovals = Array.isArray(removalPayload)
+      ? removalPayload
+        .map((id: unknown) => String(id || '').trim())
+        .filter(Boolean)
+      : [];
+    const forcedRemovals = new Set(requestedRemovals);
+
+    this.sendTo(obj.from, obj.command, { ok: true, queued: true }, obj.callback);
+
+    void (async () => {
+      try {
+        const instanceObject = await this.getForeignObjectAsync(`system.adapter.${this.namespace}`);
+        await this.reconcileStateCustomsFromInstanceObject(instanceObject, forcedRemovals);
+      } catch (error) {
+        this.log.error(`Could not reconcile Firebase custom state config: ${(error as Error).message}`);
+      }
+    })();
   }
 
-  private async reconcileStateCustomsFromInstanceObject(instanceObject: ioBroker.Object | null | undefined): Promise<boolean> {
+  private async reconcileStateCustomsFromInstanceObject(
+    instanceObject: ioBroker.Object | null | undefined,
+    forcedRemovals?: Set<string>
+  ): Promise<boolean> {
     if (this.isReconcilingStateCustoms) {
       return false;
     }
@@ -219,32 +283,44 @@ class FirebaseHistorySyncAdapter extends utils.Adapter {
     const desiredChannels = mergeChannelOverrides(
       Array.isArray(instanceObject.native?.channels) ? instanceObject.native.channels : []
     );
-    this.log.info(`Reconciling Firebase custom config for ${desiredChannels.length} desired channel(s)`);
+    this.log.debug(`Reconciling Firebase custom config for ${desiredChannels.length} desired channel(s)`);
     const desiredByStateId = new Map(desiredChannels.map((channel) => [channel.stateId, channel]));
-    const result = await this.getObjectViewAsync('system', 'state', {
+    const customView = await this.getObjectViewAsync('system', 'custom', {
       startkey: '',
       endkey: '\u9999'
     });
+    const removalSet = forcedRemovals ?? new Set<string>();
+    const candidateStateIds = new Set<string>(desiredByStateId.keys());
+    for (const row of customView.rows) {
+      const customMap = row.value as Record<string, CustomStateConfig | undefined> | undefined;
+      const namespaceCustom = customMap?.[this.namespace];
+      const legacyCustom = customMap?.[this.name];
+      if (namespaceCustom?.enabled || legacyCustom?.enabled) {
+        candidateStateIds.add(row.id);
+      }
+    }
 
     this.isReconcilingStateCustoms = true;
     let changed = false;
     try {
-      for (const row of result.rows) {
-        const object = row.value;
-        if (!object?.common) {
+      for (const stateId of candidateStateIds) {
+        const object = await this.getForeignObjectAsync(stateId);
+        if (!object?.common || object.type !== 'state') {
           continue;
         }
 
-        const stateId = object._id;
         const customMap = object.common.custom as Record<string, CustomStateConfig | undefined> | undefined;
-        const hasFirebaseCustom = Boolean(customMap?.[this.namespace] || customMap?.[this.name]);
+        const namespaceCustom = customMap?.[this.namespace];
+        const legacyCustom = customMap?.[this.name];
+        const hasFirebaseCustom = Boolean(namespaceCustom?.enabled || legacyCustom?.enabled);
         const desiredChannel = desiredByStateId.get(stateId);
+        const isForcedRemoval = removalSet.has(stateId);
 
-        if (!hasFirebaseCustom && !desiredChannel) {
+        if (!hasFirebaseCustom && !desiredChannel && !isForcedRemoval) {
           continue;
         }
 
-        this.log.info(
+        this.log.debug(
           `Reconciling state ${stateId}: hasCustom=${hasFirebaseCustom} desired=${Boolean(desiredChannel)}`
         );
 
@@ -254,14 +330,15 @@ class FirebaseHistorySyncAdapter extends utils.Adapter {
         if (desiredChannel) {
           nextObject.common.custom[this.namespace] = this.channelToCustomStateConfig(desiredChannel, config);
           delete nextObject.common.custom[this.name];
+        } else if (isForcedRemoval) {
+          delete nextObject.common.custom[this.namespace];
+          delete nextObject.common.custom[this.name];
+
+          if (!Object.keys(nextObject.common.custom).length) {
+            delete nextObject.common.custom;
+          }
         } else {
-          const disabledCustom = this.customStateConfigToDisabledStateConfig(
-            stateId,
-            customMap?.[this.namespace] ?? customMap?.[this.name],
-            config
-          );
-          nextObject.common.custom[this.namespace] = disabledCustom;
-          nextObject.common.custom[this.name] = { ...disabledCustom };
+          continue;
         }
 
         if (JSON.stringify(object.common.custom ?? null) === JSON.stringify(nextObject.common.custom ?? null)) {
@@ -274,23 +351,52 @@ class FirebaseHistorySyncAdapter extends utils.Adapter {
         const verifyMap = verifyObject?.common?.custom as Record<string, CustomStateConfig | undefined> | undefined;
         const verifyNamespaceCustom = verifyMap?.[this.namespace];
         const verifyLegacyCustom = verifyMap?.[this.name];
-        const verified = desiredChannel
+        let verified = desiredChannel
           ? Boolean(verifyNamespaceCustom?.enabled && verifyNamespaceCustom.sync !== false)
-          : Boolean(
-            verifyNamespaceCustom?.enabled === false &&
-            verifyNamespaceCustom?.sync === false &&
-            verifyLegacyCustom?.enabled === false &&
-            verifyLegacyCustom?.sync === false
-          );
+          : Boolean(!verifyNamespaceCustom && !verifyLegacyCustom);
 
-        this.log.info(
+        if (isForcedRemoval && !verified) {
+          const fallbackObject = JSON.parse(JSON.stringify(object)) as ioBroker.StateObject;
+          fallbackObject.common.custom = fallbackObject.common.custom || {};
+          const disabledCustom: CustomStateConfig = {
+            enabled: false,
+            sync: false,
+            key: namespaceCustom?.key?.trim() || legacyCustom?.key?.trim() || objectIdToFirebaseKey(stateId),
+            mode: namespaceCustom?.mode ?? legacyCustom?.mode ?? 'threshold',
+            minChange: namespaceCustom?.minChange ?? legacyCustom?.minChange ?? 0,
+            factor: namespaceCustom?.factor ?? legacyCustom?.factor ?? 1,
+            transform: namespaceCustom?.transform ?? legacyCustom?.transform ?? 'none',
+            round: namespaceCustom?.round ?? legacyCustom?.round ?? 1,
+            minSendIntervalMs: namespaceCustom?.minSendIntervalMs ?? legacyCustom?.minSendIntervalMs ?? 10000,
+            maxSendIntervalMs: namespaceCustom?.maxSendIntervalMs ?? legacyCustom?.maxSendIntervalMs ?? 900000,
+            dailyHour: namespaceCustom?.dailyHour ?? legacyCustom?.dailyHour ?? config.dailyWriteHour ?? 0,
+            dailyMinute: namespaceCustom?.dailyMinute ?? legacyCustom?.dailyMinute ?? config.dailyWriteMinute ?? 10,
+            defaultValue: namespaceCustom?.defaultValue ?? legacyCustom?.defaultValue ?? null
+          };
+          fallbackObject.common.custom[this.namespace] = disabledCustom;
+          fallbackObject.common.custom[this.name] = { ...disabledCustom };
+          await this.setForeignObjectAsync(stateId, fallbackObject, this.adminWriteOptions);
+
+          const fallbackVerifyObject = await this.getForeignObjectAsync(stateId);
+          const fallbackVerifyMap = fallbackVerifyObject?.common?.custom as Record<string, CustomStateConfig | undefined> | undefined;
+          const fallbackNamespaceCustom = fallbackVerifyMap?.[this.namespace];
+          const fallbackLegacyCustom = fallbackVerifyMap?.[this.name];
+          verified = Boolean(
+            fallbackNamespaceCustom?.enabled === false &&
+            fallbackNamespaceCustom?.sync === false &&
+            fallbackLegacyCustom?.enabled === false &&
+            fallbackLegacyCustom?.sync === false
+          );
+        }
+
+        this.log.debug(
           `Reconciled state ${stateId}: verified=${verified} namespaceEnabled=${verifyNamespaceCustom?.enabled ?? 'missing'} legacyEnabled=${verifyLegacyCustom?.enabled ?? 'missing'}`
         );
 
         if (verified) {
           changed = true;
         } else {
-          this.log.warn(`State ${stateId} did not reach desired Firebase custom state after reconcile write`);
+          this.log.debug(`State ${stateId} did not reach desired Firebase custom state after reconcile write`);
         }
       }
     } finally {
@@ -431,28 +537,6 @@ class FirebaseHistorySyncAdapter extends utils.Adapter {
       dailyHour: channel.dailyHour ?? config.dailyWriteHour ?? 0,
       dailyMinute: channel.dailyMinute ?? config.dailyWriteMinute ?? 10,
       defaultValue: channel.defaultValue ?? null
-    };
-  }
-
-  private customStateConfigToDisabledStateConfig(
-    stateId: string,
-    currentCustom: CustomStateConfig | undefined,
-    config: AdapterNativeConfig
-  ): CustomStateConfig {
-    return {
-      enabled: false,
-      sync: false,
-      key: currentCustom?.key?.trim() || objectIdToFirebaseKey(stateId),
-      mode: currentCustom?.mode ?? 'threshold',
-      minChange: currentCustom?.minChange ?? 0,
-      factor: currentCustom?.factor ?? 1,
-      transform: currentCustom?.transform ?? 'none',
-      round: currentCustom?.round ?? 1,
-      minSendIntervalMs: currentCustom?.minSendIntervalMs ?? 10000,
-      maxSendIntervalMs: currentCustom?.maxSendIntervalMs ?? 900000,
-      dailyHour: currentCustom?.dailyHour ?? config.dailyWriteHour ?? 0,
-      dailyMinute: currentCustom?.dailyMinute ?? config.dailyWriteMinute ?? 10,
-      defaultValue: currentCustom?.defaultValue ?? null
     };
   }
 

@@ -44,6 +44,7 @@
     "mode": "daemon",
     "type": "general",
     "supportCustoms": true,
+    "messagebox": true,
     "adminTab": {
       "name": {
         "en": "Firebase Sync",
