@@ -68,7 +68,8 @@
       }
     ],
     "tier": 3,
-    "restartAdapters": []
+    "restartAdapters": [],
+    "installedFrom": "C:\\Users\\fabian.mayer\\Documents\\web\\iobroker.firebase-history-sync"
   },
   "native": {
     "databaseUrl": "",

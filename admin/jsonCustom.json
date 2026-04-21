@@ -4,7 +4,7 @@
     "enabled": {
       "type": "checkbox",
       "label": "Show this state in Firebase adapter channel list",
-      "default": true,
+      "default": false,
       "sm": 12
     },
     "sync": {

@@ -56,7 +56,7 @@ export class SyncRuntime {
     await this.processRawValue(channel, state.val, 'state-change');
   }
 
-  public stop(): void {
+  public async stop(): Promise<void> {
     this.stopped = true;
 
     for (const runtimeState of this.stateByKey.values()) {
@@ -71,6 +71,14 @@ export class SyncRuntime {
 
     if (this.dailyTimer) {
       clearInterval(this.dailyTimer);
+    }
+
+    for (const channel of this.channels) {
+      try {
+        await this.adapter.unsubscribeForeignStatesAsync(channel.stateId);
+      } catch (error) {
+        this.adapter.log.debug(`Could not unsubscribe ${channel.stateId}: ${(error as Error).message}`);
+      }
     }
   }
 
