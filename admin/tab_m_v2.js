@@ -1058,13 +1058,20 @@
 
     async function saveRows(silent) {
         syncAllRowsFromDom();
-        const currentStateIds = new Set(rows.map((row) => row.stateId));
+        const activeRows = rows.filter((row) => row && row.sync !== false);
+        const inactiveStateIds = rows
+            .filter((row) => row && row.sync === false)
+            .map((row) => row.stateId)
+            .filter(Boolean);
+        const currentStateIds = new Set(activeRows.map((row) => row.stateId));
         debugLog('saveRows start', {
             rows: rows.map((row) => ({
                 stateId: row.stateId,
                 sync: row.sync,
                 key: row.key
             })),
+            activeRows: activeRows.map((row) => row.stateId),
+            inactiveStateIds,
             removedStateIds: [...removedStateIds]
         });
 
@@ -1090,6 +1097,7 @@
                 stateIdsToRemove.add(stateId);
             }
         });
+        inactiveStateIds.forEach((stateId) => stateIdsToRemove.add(stateId));
 
         debugLog('saveRows removal reconciliation', {
             configuredStateIds,
@@ -1100,9 +1108,9 @@
 
         debugLog('SAVE_ORDER_V3 instance-first writing instance object', {
             instanceObjectId,
-            channelCount: rows.length
+            channelCount: activeRows.length
         });
-        instanceObject.native.channels = rows.map((row) => ({
+        instanceObject.native.channels = activeRows.map((row) => ({
             key: row.key,
             stateId: row.stateId,
             enabled: true,

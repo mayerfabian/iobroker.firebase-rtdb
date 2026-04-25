@@ -620,8 +620,14 @@ class FirebaseHistorySyncAdapter extends utils.Adapter {
         const namespaceCustom = customMap?.[this.namespace];
         const legacyCustom = customMap?.[this.name];
         const hasFirebaseCustom = Boolean(namespaceCustom?.enabled || legacyCustom?.enabled);
-        const desiredChannel = desiredByStateId.get(stateId);
-        const isForcedRemoval = removalSet.has(stateId);
+        const desiredChannelRaw = desiredByStateId.get(stateId);
+        const desiredChannel = desiredChannelRaw && desiredChannelRaw.enabled !== false && desiredChannelRaw.sync !== false
+          ? desiredChannelRaw
+          : undefined;
+        const isDisabledByChannel = Boolean(
+          desiredChannelRaw && (desiredChannelRaw.enabled === false || desiredChannelRaw.sync === false)
+        );
+        const isForcedRemoval = removalSet.has(stateId) || isDisabledByChannel;
 
         if (!hasFirebaseCustom && !desiredChannel && !isForcedRemoval) {
           continue;
