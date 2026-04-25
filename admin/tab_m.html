@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8" />
@@ -64,17 +64,34 @@
         </div>
 
         <div class="info-banner">
-            Hier werden nur States gelistet, die für diesen Adapter wirklich als Firebase-Channel aktiviert sind.
-            Neue Einträge können hier angelegt werden. Änderungen werden nach einem Adapter-Neustart wirksam.
+            Hier werden nur States gelistet, die f&uuml;r diesen Adapter wirklich als Firebase-Channel aktiviert sind.
+            Neue Eintr&auml;ge k&ouml;nnen hier angelegt werden. &Auml;nderungen werden nach einem Adapter-Neustart wirksam.
+        </div>
+
+        <div class="read-row-panel">
+            <div class="input-field read-path-field">
+                <input type="text" id="rtdb-read-path" value="data" />
+                <label class="active" for="rtdb-read-path">RTDB Pfad (relativ zu rootPath)</label>
+            </div>
+            <a class="waves-effect waves-light btn" id="load-rtdb-points-button">RTDB Liste laden</a>
+            <a class="waves-effect waves-light btn-floating create-fab-button" id="open-create-rtdb-modal-button" title="Datenpunkt erstellen" aria-label="Datenpunkt erstellen">+</a>
+        </div>
+        <div class="rtdb-read-summary" id="rtdb-read-summary">Noch nicht geladen.</div>
+        <div class="rtdb-path-list" id="rtdb-path-list">
+            <div class="picker-empty">Lade die Liste manuell per Button.</div>
+        </div>
+        <div class="rtdb-list-footer is-hidden" id="rtdb-list-footer">
+            <a class="waves-effect waves-light btn red darken-1" id="delete-selected-rtdb-button">Markierte in RTDB löschen</a>
+            <a class="waves-effect waves-light btn" id="subscribe-selected-rtdb-button">Markierte Datenpunkte im ioBroker abonnieren</a>
         </div>
 
         <div class="add-row-panel">
             <div class="input-field state-id-field">
                 <input type="text" id="new-state-id" />
-                <label for="new-state-id">State-ID hinzufügen</label>
+                <label class="active" for="new-state-id">State-ID hinzuf&uuml;gen</label>
             </div>
-            <a class="waves-effect waves-light btn" id="browse-button">Objekte wählen</a>
-            <a class="waves-effect waves-light btn" id="add-button">Hinzufügen</a>
+            <a class="waves-effect waves-light btn" id="browse-button">Objekte w&auml;hlen</a>
+            <a class="waves-effect waves-light btn" id="add-button">Hinzuf&uuml;gen</a>
         </div>
 
         <div class="accordion-list" id="channel-table-body">
@@ -83,27 +100,27 @@
 
     <div id="object-picker-modal" class="modal picker-modal">
         <div class="modal-content">
-            <h4>Datenpunkte auswählen</h4>
+            <h4>Datenpunkte ausw&auml;hlen</h4>
             <div class="picker-toolbar">
                 <div class="input-field picker-search">
                     <input type="text" id="picker-search" />
                     <label for="picker-search">Suche nach State-ID</label>
                 </div>
-                <a class="waves-effect waves-light btn" id="picker-select-visible">Sichtbare auswählen</a>
-                <a class="waves-effect waves-light btn" id="picker-clear-visible">Sichtbare abwählen</a>
+                <a class="waves-effect waves-light btn" id="picker-select-visible">Sichtbare ausw&auml;hlen</a>
+                <a class="waves-effect waves-light btn" id="picker-clear-visible">Sichtbare abw&auml;hlen</a>
             </div>
             <div class="picker-summary" id="picker-summary">0 sichtbar, 0 markiert</div>
             <div class="picker-list" id="picker-list"></div>
         </div>
         <div class="modal-footer">
             <a href="#!" class="modal-close waves-effect btn-flat">Abbrechen</a>
-            <a href="#!" class="waves-effect waves-light btn" id="picker-apply">Auswahl übernehmen</a>
+            <a href="#!" class="waves-effect waves-light btn" id="picker-apply">Auswahl &uuml;bernehmen</a>
         </div>
     </div>
 
     <div id="delete-confirm-modal" class="modal delete-modal">
         <div class="modal-content">
-            <h4>Datenpunkt löschen</h4>
+            <h4>Datenpunkt l&ouml;schen</h4>
             <p id="delete-confirm-text">Soll dieser Datenpunkt wirklich entfernt werden?</p>
             <p>
                 <label>
@@ -114,7 +131,44 @@
         </div>
         <div class="modal-footer">
             <a href="#!" class="modal-close waves-effect btn-flat">Abbrechen</a>
-            <a href="#!" class="waves-effect waves-light btn red" id="delete-confirm-apply">Löschen</a>
+            <a href="#!" class="waves-effect waves-light btn red" id="delete-confirm-apply">L&ouml;schen</a>
+        </div>
+    </div>
+
+    <div id="create-rtdb-modal" class="modal create-rtdb-modal">
+        <div class="modal-content">
+            <h4 id="create-rtdb-modal-title">Datenpunkt erstellen</h4>
+            <div class="input-field">
+                <input type="text" id="rtdb-create-key" />
+                <label for="rtdb-create-key">Neuer Datenpunkt (z. B. testWert)</label>
+            </div>
+            <div class="input-field">
+                <input type="text" id="rtdb-create-state" />
+                <label for="rtdb-create-state">state</label>
+            </div>
+            <div class="create-select-field create-modal-select-field">
+                <label for="rtdb-create-type">type</label>
+                <select id="rtdb-create-type">
+                    <option value="number">Zahl (number)</option>
+                    <option value="string" selected>Zeichenkette (string)</option>
+                    <option value="bool">Logikwert (bool)</option>
+                    <option value="array">Liste (array)</option>
+                    <option value="object">Objekt (object)</option>
+                    <option value="mixed">Gemischt (mixed)</option>
+                </select>
+            </div>
+            <div class="create-select-field create-modal-select-field">
+                <label for="rtdb-create-role">role</label>
+                <select id="rtdb-create-role"></select>
+            </div>
+            <div class="input-field">
+                <input type="text" id="rtdb-create-description" />
+                <label for="rtdb-create-description">description (optional)</label>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <a href="#!" class="modal-close waves-effect btn-flat">Abbrechen</a>
+            <a href="#!" class="waves-effect waves-light btn" id="create-rtdb-point-button">In RTDB erstellen</a>
         </div>
     </div>
 </body>

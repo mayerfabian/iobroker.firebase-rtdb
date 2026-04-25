@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
     const ADAPTER = 'firebase-history-sync';
     const DEFAULT_ROW = {
         sync: true,
@@ -24,6 +24,11 @@
     let initiallyLoadedStateIds = new Set();
     let availableStates = [];
     let loadedStateObjects = new Map();
+    let loadedReadableRtdbEntries = [];
+    let selectedReadableRtdbPaths = new Set();
+    let savedReadSubscriptionsByPath = new Map();
+    let editingReadableRtdbPath = '';
+    let knownRoles = getDefaultKnownRoles();
     let pickerSelection = new Set();
     let pendingDeleteIndex = null;
     let skipDeleteConfirmForSession = false;
@@ -56,6 +61,7 @@
         debugLog('detected instance', { instance, namespace, instanceObjectId });
 
         bindUi();
+        renderRoleDropdown();
         startSystemTimeTicker();
         setStatus(`Instanz ${namespace}`);
         await loadPage();
@@ -64,6 +70,11 @@
     function bindUi() {
         $('#reload-button').off('click').on('click', () => void loadPage());
         $('#save-button').off('click').on('click', () => void handleSaveClick());
+        $('#load-rtdb-points-button').off('click').on('click', () => void handleLoadRtdbPointsClick());
+        $('#open-create-rtdb-modal-button').off('click').on('click', () => openCreateRtdbModal());
+        $('#create-rtdb-point-button').off('click').on('click', () => void handleCreateRtdbDatapointClick());
+        $('#delete-selected-rtdb-button').off('click').on('click', () => void handleDeleteSelectedRtdbDatapointsClick());
+        $('#subscribe-selected-rtdb-button').off('click').on('click', () => void handleSubscribeSelectedRtdbClick());
         $('#add-button').off('click').on('click', () => void addStateId());
         $('#browse-button').off('click').on('click', () => void openPicker());
         $('#new-state-id').off('keypress').on('keypress', (event) => {
@@ -78,7 +89,20 @@
         $('#picker-apply').off('click').on('click', () => void applyPickerSelection());
         $('#object-picker-modal').modal();
         $('#delete-confirm-modal').modal();
+        $('#create-rtdb-modal').modal();
         $('#delete-confirm-apply').off('click').on('click', () => applyDeleteConfirmed());
+    }
+
+    function openCreateRtdbModal() {
+        editingReadableRtdbPath = '';
+        $('#create-rtdb-modal-title').text('Datenpunkt erstellen');
+        $('#create-rtdb-point-button').text('In RTDB erstellen');
+        $('#rtdb-create-key').val('');
+        $('#rtdb-create-state').val('');
+        $('#rtdb-create-type').val('string');
+        $('#rtdb-create-role').val('indicator');
+        $('#rtdb-create-description').val('');
+        $('#create-rtdb-modal').modal('open');
     }
 
     async function loadPage() {
@@ -89,6 +113,9 @@
         if (!instanceObject) {
             throw new Error(`Instanzobjekt nicht gefunden: ${instanceObjectId}`);
         }
+        savedReadSubscriptionsByPath = readSubscriptionsToMap(instanceObject?.native?.readSubscriptions);
+        selectedReadableRtdbPaths = new Set([...savedReadSubscriptionsByPath.keys()]);
+        loadedReadableRtdbEntries = [];
 
         updateSummary(instanceObject, []);
 
@@ -116,6 +143,9 @@
 
         renderRows();
         updateSummary(instanceObject, rows);
+        renderRtdbPathList([]);
+        $('#rtdb-read-summary').text(`Noch nicht geladen. Gespeichert: ${savedReadSubscriptionsByPath.size} Abos.`);
+        await loadKnownRoles();
     }
 
     async function openPicker() {
@@ -226,7 +256,7 @@
         renderRows();
         updateSummaryDisplay(rows);
         $('#object-picker-modal').modal('close');
-        showToast(`${selectedStateIds.length} Datenpunkte ausgewählt. Änderungen noch nicht gespeichert.`);
+        showToast(`${selectedStateIds.length} Datenpunkte ausgew\u00E4hlt. \u00C4nderungen noch nicht gespeichert.`);
     }
 
     function mapRowToChannel(row) {
@@ -273,7 +303,7 @@
         $body.empty();
 
         if (!rows.length) {
-            $body.append(`<div class="empty-row">${emptyMessage || 'Keine Datenpunkte ausgewählt.'}</div>`);
+            $body.append(`<div class="empty-row">${emptyMessage || 'Keine Datenpunkte ausgew\u00E4hlt.'}</div>`);
             return;
         }
 
@@ -312,8 +342,8 @@
                                 <label>Mode</label>
                                 ${renderSelect('mode', row.mode, [
                                     { value: 'threshold', label: 'Schwellwert' },
-                                    { value: 'change', label: 'Jede Änderung (bei Wertwechsel)' },
-                                    { value: 'daily_only', label: 'Täglich (Uhrzeit)' }
+                                    { value: 'change', label: 'Jede \u00C4nderung (bei Wertwechsel)' },
+                                    { value: 'daily_only', label: 'T\u00E4glich (Uhrzeit)' }
                                 ])}
                             </div>
                             <div class="detail-field">
@@ -335,7 +365,7 @@
                                 ])}
                             </div>
                             <div class="detail-field">
-                                <label>Mindeständerung</label>
+                                <label>Mindest\u00E4nderung</label>
                                 <input type="number" step="0.1" data-field="minChange" value="${row.minChange}" />
                             </div>
                             <div class="detail-field">
@@ -352,7 +382,7 @@
                                     <input type="number" step="any" data-field="minSendIntervalMs" value="${formatMsForUnit(row.minSendIntervalMs, row.timeUnit)}" />
                                     <span class="unit-suffix">${formatTimeUnitDisplay(row.timeUnit)}</span>
                                 </div>
-                                <div class="field-help">Kürzester Abstand zwischen zwei Schreibvorgängen.</div>
+                                <div class="field-help">K\u00FCrzester Abstand zwischen zwei Schreibvorg\u00E4ngen.</div>
                             </div>
                             <div class="detail-field mode-not-daily">
                                 <label>Max Sendeintervall</label>
@@ -360,17 +390,17 @@
                                     <input type="number" step="any" data-field="maxSendIntervalMs" value="${formatMsForUnit(row.maxSendIntervalMs, row.timeUnit)}" />
                                     <span class="unit-suffix">${formatTimeUnitDisplay(row.timeUnit)}</span>
                                 </div>
-                                <div class="field-help">Spätestens nach diesem Abstand wird erneut geschrieben.</div>
+                                <div class="field-help">Sp\u00E4testens nach diesem Abstand wird erneut geschrieben.</div>
                             </div>
                             <div class="detail-field mode-daily-only">
                                 <label>Uhrzeit</label>
                                 <input type="time" data-field="dailyTime" value="${formatDailyTime(row.dailyHour, row.dailyMinute)}" />
-                                <div class="field-help">Wann täglich geschrieben wird. Aktuelle Systemzeit: <span class="system-time-now">${getSystemTimeText()}</span></div>
+                                <div class="field-help">Wann t\u00E4glich geschrieben wird. Aktuelle Systemzeit: <span class="system-time-now">${getSystemTimeText()}</span></div>
                             </div>
                             <div class="detail-field">
                                 <label>Default</label>
                                 <input type="number" step="0.1" data-field="defaultValue" value="${formatInputValue(row.defaultValue)}" />
-                                <div class="field-help">Wert für den Startfall oder wenn kein gültiger Messwert vorliegt.</div>
+                                <div class="field-help">Wert f\u00FCr den Startfall oder wenn kein g\u00FCltiger Messwert vorliegt.</div>
                             </div>
                         </div>
                     </div>
@@ -412,7 +442,7 @@
                 <input type="checkbox" data-field="sync" ${value ? 'checked' : ''} />
                 <span></span>
             </label>
-            <button type="button" class="summary-delete" title="Datenpunkt löschen" aria-label="Datenpunkt löschen">
+            <button type="button" class="summary-delete" title="Datenpunkt l\u00F6schen" aria-label="Datenpunkt l\u00F6schen">
                 <span aria-hidden="true">&#128465;</span>
             </button>
         `;
@@ -554,7 +584,7 @@
         rows = rows.filter((_, currentIndex) => currentIndex !== index);
         renderRows();
         updateSummaryDisplay(rows);
-        showToast('Datenpunkt aus der Liste entfernt. Änderungen noch nicht gespeichert.');
+        showToast('Datenpunkt aus der Liste entfernt. \u00C4nderungen noch nicht gespeichert.');
     }
 
     async function addStateId() {
@@ -598,7 +628,408 @@
         $('#new-state-id').val('');
         renderRows();
         updateSummaryDisplay(rows);
-        showToast('State-ID hinzugefügt. Änderungen noch nicht gespeichert.');
+        showToast('State-ID hinzugef\u00FCgt. \u00C4nderungen noch nicht gespeichert.');
+    }    async function handleLoadRtdbPointsClick() {
+        const relativePath = String($('#rtdb-read-path').val() || '').trim() || 'data';
+        const $button = $('#load-rtdb-points-button');
+        $button.addClass('disabled').attr('aria-disabled', 'true').text('Lädt...');
+        try {
+            const response = await sendToAdapter('listReadableRtdbPaths', {
+                path: relativePath,
+                maxEntries: 800,
+                maxDepth: 10
+            });
+
+            const entries = Array.isArray(response && response.entries) ? response.entries : [];
+            const fullPath = response && response.path ? String(response.path) : relativePath;
+            const truncated = Boolean(response && response.truncated);
+            loadedReadableRtdbEntries = entries
+                .map((entry) => ({
+                    path: entry && entry.path ? String(entry.path) : '',
+                    type: entry && entry.type ? String(entry.type) : 'unknown',
+                    preview: entry && entry.preview ? String(entry.preview) : '',
+                    role: entry && entry.role ? String(entry.role) : '',
+                    description: entry && entry.description ? String(entry.description) : '',
+                    name: entry && entry.name ? String(entry.name) : ''
+                }))
+                .filter((entry) => Boolean(entry.path));
+            const summary = truncated
+                ? `${loadedReadableRtdbEntries.length} Pfade unter ${fullPath} geladen (gekürzt).`
+                : `${loadedReadableRtdbEntries.length} Pfade unter ${fullPath} geladen.`;
+
+            renderRtdbPathList(loadedReadableRtdbEntries);
+            $('#rtdb-read-summary').text(summary);
+            showToast(summary);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            $('#rtdb-read-summary').text(`Fehler beim Laden: ${message}`);
+            loadedReadableRtdbEntries = [];
+            renderRtdbPathList([]);
+            showToast(`RTDB-Liste fehlgeschlagen: ${message}`);
+            debugError('load readable rtdb paths failed', error);
+        } finally {
+            $button.removeClass('disabled').attr('aria-disabled', 'false').text('RTDB Liste laden');
+        }
+    }
+
+    async function handleCreateRtdbDatapointClick() {
+        const basePath = normalizeRtdbPath($('#rtdb-read-path').val(), 'data');
+        const key = normalizeRtdbPath($('#rtdb-create-key').val(), '');
+        if (!editingReadableRtdbPath && !key) {
+            showToast('Bitte einen Datenpunktnamen eingeben.');
+            return;
+        }
+
+        const type = String($('#rtdb-create-type').val() || 'string').trim().toLowerCase();
+        const stateRaw = String($('#rtdb-create-state').val() || '').trim();
+        const stateValue = parseCreateStateValue(type, stateRaw);
+        if (stateValue === undefined) {
+            showToast(`Ungültiger state-Wert für Typ "${type}".`);
+            return;
+        }
+
+        const role = String($('#rtdb-create-role').val() || '').trim();
+        const description = String($('#rtdb-create-description').val() || '').trim();
+        const path = editingReadableRtdbPath
+            ? normalizeRtdbPath(editingReadableRtdbPath, '')
+            : normalizeRtdbPath(`${basePath}/${key}`, key);
+        const payload = {
+            state: stateValue,
+            type,
+            ...(role ? { role } : {}),
+            ...(description ? { description } : {})
+        };
+
+        const $button = $('#create-rtdb-point-button');
+        $button.addClass('disabled').attr('aria-disabled', 'true');
+        try {
+            await sendToAdapter('createReadableRtdbDatapoint', { path, data: payload });
+            selectedReadableRtdbPaths.add(path);
+            showToast(editingReadableRtdbPath ? `RTDB-Datenpunkt aktualisiert: ${path}` : `RTDB-Datenpunkt erstellt: ${path}`);
+            editingReadableRtdbPath = '';
+            $('#rtdb-create-key').val('');
+            $('#rtdb-create-state').val('');
+            $('#rtdb-create-type').val('string');
+            $('#rtdb-create-role').val('');
+            $('#rtdb-create-description').val('');
+            $('#create-rtdb-modal-title').text('Datenpunkt erstellen');
+            $('#create-rtdb-point-button').text('In RTDB erstellen');
+            $('#create-rtdb-modal').modal('close');
+            void handleLoadRtdbPointsClick();
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            showToast(`Erstellen fehlgeschlagen: ${message}`);
+            debugError('create rtdb datapoint failed', error);
+        } finally {
+            $button.removeClass('disabled').attr('aria-disabled', 'false');
+        }
+    }
+
+    async function loadKnownRoles() {
+        renderRoleDropdown();
+        try {
+            const response = await sendToAdapter('listKnownRoles', {});
+            const roles = Array.isArray(response && response.roles) ? response.roles : [];
+            const merged = roles
+                .map((role) => String(role || '').trim())
+                .filter(Boolean);
+            if (merged.length) {
+                knownRoles = [...new Set([...knownRoles, ...merged])].sort((a, b) => a.localeCompare(b));
+            }
+            renderRoleDropdown();
+        } catch (error) {
+            debugWarn('could not load known roles', error);
+            renderRoleDropdown();
+        }
+    }
+
+    function renderRoleDropdown() {
+        const $select = $('#rtdb-create-role');
+        if (!$select.length) {
+            return;
+        }
+
+        const previousValue = String($select.val() || '').trim();
+        const options = []
+            .concat(knownRoles)
+            .map((role) => `<option value="${escapeHtml(role)}">${escapeHtml(role)}</option>`)
+            .join('');
+        $select.html(options);
+
+        const hasIndicator = knownRoles.includes('indicator');
+        const nextValue = previousValue || (hasIndicator ? 'indicator' : '');
+        $select.val(nextValue);
+    }
+
+    function getDefaultKnownRoles() {
+        return [
+            'button',
+            'button.close.blind',
+            'button.close.tilt',
+            'button.fastforward',
+            'button.fastreverse',
+            'button.forward',
+            'button.long',
+            'button.mode.',
+            'button.mode.auto',
+            'button.mode.manual',
+            'button.mode.silent',
+            'button.next',
+            'button.open.blind',
+            'button.open.door',
+            'button.open.tilt',
+            'button.open.window',
+            'button.pause',
+            'button.play',
+            'button.press',
+            'button.prev',
+            'button.resume',
+            'button.reverse',
+            'button.start',
+            'button.stop',
+            'button.stop.tilt',
+            'button.volume.down',
+            'button.volume.up',
+            'indicator',
+            'indicator.alarm',
+            'indicator.alarm.fire',
+            'indicator.alarm.flood',
+            'indicator.alarm.health',
+            'indicator.alarm.secure',
+            'indicator.connected',
+            'indicator.direction',
+            'indicator.error',
+            'indicator.lowbat',
+            'indicator.maintenance',
+            'indicator.maintenance.alarm',
+            'indicator.maintenance.lowbat',
+            'indicator.maintenance.unreach',
+            'indicator.maintenance.waste',
+            'indicator.reachable',
+            'indicator.working',
+            'sensor',
+            'sensor.alarm',
+            'sensor.alarm.fire',
+            'sensor.alarm.flood',
+            'sensor.alarm.power',
+            'sensor.alarm.secure',
+            'sensor.contact',
+            'sensor.door',
+            'sensor.light',
+            'sensor.lock',
+            'sensor.motion',
+            'sensor.noise',
+            'sensor.rain',
+            'sensor.switch',
+            'sensor.window',
+            'switch',
+            'switch.comfort',
+            'switch.enable',
+            'switch.gate',
+            'switch.light',
+            'switch.lock',
+            'switch.lock.door',
+            'switch.lock.window',
+            'switch.mode.',
+            'switch.mode.auto',
+            'switch.mode.boost',
+            'switch.mode.color',
+            'switch.mode.manual',
+            'switch.mode.moonlight',
+            'switch.mode.party',
+            'switch.mode.silent',
+            'switch.pause',
+            'switch.power',
+            'switch.power.zone',
+            'switch.setting'
+        ];
+    }
+
+    async function handleDeleteSelectedRtdbDatapointsClick() {
+        const availablePaths = new Set(
+            loadedReadableRtdbEntries
+                .map((entry) => (entry && entry.path ? String(entry.path).trim() : ''))
+                .filter(Boolean)
+        );
+        const paths = [...selectedReadableRtdbPaths]
+            .filter((path) => availablePaths.has(path))
+            .sort((a, b) => String(a).localeCompare(String(b)));
+        if (!paths.length) {
+            showToast('Keine markierten Datenpunkte zum Löschen.');
+            return;
+        }
+
+        const confirmed = window.confirm(`${paths.length} markierte Datenpunkte in RTDB wirklich löschen?`);
+        if (!confirmed) {
+            return;
+        }
+
+        const $button = $('#delete-selected-rtdb-button');
+        $button.addClass('disabled').attr('aria-disabled', 'true');
+        try {
+            await sendToAdapter('deleteReadableRtdbDatapoints', { paths });
+            paths.forEach((path) => selectedReadableRtdbPaths.delete(path));
+            showToast(`${paths.length} Datenpunkte in RTDB gelöscht.`);
+            void handleLoadRtdbPointsClick();
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            showToast(`Löschen fehlgeschlagen: ${message}`);
+            debugError('delete rtdb datapoints failed', error);
+        } finally {
+            $button.removeClass('disabled').attr('aria-disabled', 'false');
+        }
+    }
+
+    async function handleSubscribeSelectedRtdbClick() {
+        const availablePaths = new Set(
+            loadedReadableRtdbEntries
+                .map((entry) => (entry && entry.path ? String(entry.path).trim() : ''))
+                .filter(Boolean)
+        );
+        const markedAvailablePaths = [...selectedReadableRtdbPaths].filter((path) => availablePaths.has(path));
+        if (!markedAvailablePaths.length) {
+            showToast('Keine markierten Datenpunkte zum Abonnieren.');
+            return;
+        }
+
+        if (isSaving) {
+            return;
+        }
+
+        const $button = $('#subscribe-selected-rtdb-button');
+        try {
+            setSavingState(true);
+            $button.addClass('disabled').attr('aria-disabled', 'true');
+            await saveRows(true);
+            showToast(`${markedAvailablePaths.length} Datenpunkte für ioBroker-Abo gespeichert.`);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            showToast(`Abo speichern fehlgeschlagen: ${message}`);
+            debugError('subscribe selected rtdb failed', error);
+        } finally {
+            setSavingState(false);
+            $button.removeClass('disabled').attr('aria-disabled', 'false');
+        }
+    }
+
+    async function openEditRtdbDatapointModal(path, entry) {
+        const normalizedPath = normalizeRtdbPath(path, '');
+        if (!normalizedPath) {
+            return;
+        }
+        const $editButton = $(`.rtdb-edit-button[data-rtdb-path="${escapeSelectorValue(normalizedPath)}"]`);
+        $editButton.addClass('disabled').attr('aria-disabled', 'true');
+        try {
+            const response = await sendToAdapter('readReadableRtdbDatapoint', { path: normalizedPath });
+            const raw = response && response.data;
+            if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !Object.prototype.hasOwnProperty.call(raw, 'state')) {
+                throw new Error('Datenpunkt hat kein gültiges state-Objekt');
+            }
+
+            const data = raw;
+            const type = normalizeCreateType((data && data.type) || (entry && entry.type) || inferTypeFromValue(data.state));
+            const role = String((data && data.role) || (entry && entry.role) || '').trim();
+            const description = String((data && data.description) || (entry && entry.description) || '').trim();
+            const stateInput = stateValueToInput(type, data.state);
+            const key = relativeKeyFromPath(normalizedPath);
+
+            editingReadableRtdbPath = normalizedPath;
+            $('#create-rtdb-modal-title').text('Datenpunkt bearbeiten');
+            $('#create-rtdb-point-button').text('In RTDB speichern');
+            $('#rtdb-create-key').val(key);
+            $('#rtdb-create-state').val(stateInput);
+            $('#rtdb-create-type').val(type);
+            $('#rtdb-create-role').val(role || 'indicator');
+            $('#rtdb-create-description').val(description);
+            $('#create-rtdb-modal').modal('open');
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            showToast(`Bearbeiten fehlgeschlagen: ${message}`);
+            debugError('open edit rtdb datapoint modal failed', error);
+        } finally {
+            $editButton.removeClass('disabled').attr('aria-disabled', 'false');
+        }
+    }
+
+    function renderRtdbPathList(entries) {
+        const safeEntries = Array.isArray(entries) ? entries : [];
+        const $list = $('#rtdb-path-list');
+        $list.empty();
+
+        if (!safeEntries.length) {
+            $list.append('<div class="picker-empty">Keine Pfade gefunden.</div>');
+            updateRtdbFooterActions(safeEntries);
+            return;
+        }
+
+        safeEntries.forEach((entry) => {
+            const path = entry && entry.path ? String(entry.path) : '';
+            const type = entry && entry.type ? String(entry.type) : 'unknown';
+            const preview = entry && entry.preview ? String(entry.preview) : '';
+            const role = entry && entry.role ? String(entry.role) : '';
+            const description = entry && entry.description ? String(entry.description) : '';
+            const name = entry && entry.name ? String(entry.name) : '';
+            const checked = selectedReadableRtdbPaths.has(path) ? 'checked' : '';
+            const metaParts = [
+                `state: ${preview}`,
+                `type: ${type}`,
+                role ? `role: ${role}` : '',
+                description ? `description: ${description}` : '',
+                name ? `name: ${name}` : ''
+            ].filter(Boolean);
+
+            const $item = $(`
+                <div class="rtdb-path-item">
+                    <div class="rtdb-path-head">
+                        <label class="rtdb-path-main">
+                            <input type="checkbox" class="filled-in rtdb-subscribe-checkbox" data-rtdb-path="${escapeHtml(path)}" ${checked} />
+                            <span>${escapeHtml(path)}</span>
+                        </label>
+                        <a href="#!" class="btn-flat rtdb-edit-button" data-rtdb-path="${escapeHtml(path)}">Bearbeiten</a>
+                    </div>
+                    <div class="rtdb-path-meta">${escapeHtml(metaParts.join(' | '))}</div>
+                </div>
+            `);
+            $item.find('.rtdb-subscribe-checkbox').on('change', function () {
+                const currentPath = String($(this).data('rtdb-path') || '').trim();
+                if (!currentPath) {
+                    return;
+                }
+                if ($(this).prop('checked')) {
+                    selectedReadableRtdbPaths.add(currentPath);
+                } else {
+                    selectedReadableRtdbPaths.delete(currentPath);
+                }
+                $('#rtdb-read-summary').text(
+                    `${safeEntries.length} Pfade geladen, ${selectedReadableRtdbPaths.size} für Abo markiert.`
+                );
+                updateRtdbFooterActions(safeEntries);
+            });
+            $item.find('.rtdb-edit-button').on('click', (event) => {
+                event.preventDefault();
+                void openEditRtdbDatapointModal(path, entry);
+            });
+            $list.append($item);
+        });
+
+        $('#rtdb-read-summary').text(
+            `${safeEntries.length} Pfade geladen, ${selectedReadableRtdbPaths.size} für Abo markiert.`
+        );
+        updateRtdbFooterActions(safeEntries);
+    }
+
+    function updateRtdbFooterActions(entries) {
+        const safeEntries = Array.isArray(entries) ? entries : [];
+        const availablePaths = new Set(
+            safeEntries
+                .map((entry) => (entry && entry.path ? String(entry.path) : ''))
+                .filter(Boolean)
+        );
+        const hasMarkedEntry = [...selectedReadableRtdbPaths].some((path) => availablePaths.has(path));
+        const shouldShow = availablePaths.size > 0;
+        $('#rtdb-list-footer').toggleClass('is-hidden', !shouldShow);
+        $('#delete-selected-rtdb-button').toggleClass('disabled', !hasMarkedEntry).attr('aria-disabled', !hasMarkedEntry ? 'true' : 'false');
+        $('#subscribe-selected-rtdb-button').toggleClass('disabled', !hasMarkedEntry).attr('aria-disabled', !hasMarkedEntry ? 'true' : 'false');
     }
 
     async function handleSaveClick() {
@@ -609,7 +1040,7 @@
 
         try {
             setSavingState(true);
-            showToast('Speichern läuft...');
+            showToast('Speichern l\u00E4uft...');
             debugLog('save button clicked', {
                 rows: rows.length,
                 removedStateIds: [...removedStateIds]
@@ -660,7 +1091,6 @@
             }
         });
 
-        const rowMap = new Map(rows.map((row) => [row.stateId, normalizeRow(row)]));
         debugLog('saveRows removal reconciliation', {
             configuredStateIds,
             initiallyLoadedStateIds: [...initiallyLoadedStateIds],
@@ -689,11 +1119,35 @@
             maxSendIntervalMs: row.maxSendIntervalMs,
             defaultValue: normalizeDefaultValue(row.defaultValue)
         }));
+        const nextReadSubscriptionsByPath = new Map(savedReadSubscriptionsByPath);
+        for (const entry of loadedReadableRtdbEntries) {
+            if (!entry || !entry.path) {
+                continue;
+            }
+            const path = String(entry.path).trim();
+            if (!path) {
+                continue;
+            }
+            if (selectedReadableRtdbPaths.has(path)) {
+                const existing = nextReadSubscriptionsByPath.get(path);
+                nextReadSubscriptionsByPath.set(path, {
+                    path,
+                    stateId: (existing && existing.stateId) ? String(existing.stateId) : defaultReadStateId(path),
+                    enabled: true
+                });
+            } else {
+                nextReadSubscriptionsByPath.delete(path);
+            }
+        }
+        instanceObject.native.readSubscriptions = [...nextReadSubscriptionsByPath.values()]
+            .sort((a, b) => String(a.path).localeCompare(String(b.path)));
         await setAnyObject(instanceObjectId, instanceObject);
         debugLog('SAVE_ORDER_V3 instance-first wrote instance object successfully', {
             instanceObjectId,
-            channelCount: instanceObject.native.channels.length
+            channelCount: instanceObject.native.channels.length,
+            readSubscriptions: instanceObject.native.readSubscriptions.length
         });
+        savedReadSubscriptionsByPath = readSubscriptionsToMap(instanceObject.native.readSubscriptions);
 
         debugLog('saveRows applies direct state custom cleanup', {
             namespace,
@@ -958,6 +1412,168 @@
         return Number.isFinite(parsed) ? parsed : null;
     }
 
+    function normalizeRtdbPath(value, fallback) {
+        const normalized = String(value || '')
+            .trim()
+            .replace(/^\/+|\/+$/g, '');
+        if (normalized) {
+            return normalized;
+        }
+        return String(fallback || '')
+            .trim()
+            .replace(/^\/+|\/+$/g, '');
+    }
+
+    function relativeKeyFromPath(path) {
+        const normalizedPath = normalizeRtdbPath(path, '');
+        const basePath = normalizeRtdbPath($('#rtdb-read-path').val(), 'data');
+        if (basePath && normalizedPath.startsWith(`${basePath}/`)) {
+            return normalizedPath.slice(basePath.length + 1);
+        }
+        if (normalizedPath === basePath) {
+            return '';
+        }
+        return normalizedPath;
+    }
+
+    function normalizeCreateType(value) {
+        const normalized = String(value || '').trim().toLowerCase();
+        if (normalized === 'boolean') {
+            return 'bool';
+        }
+        if (['number', 'string', 'bool', 'array', 'object', 'mixed'].includes(normalized)) {
+            return normalized;
+        }
+        return 'string';
+    }
+
+    function inferTypeFromValue(value) {
+        if (typeof value === 'number') {
+            return 'number';
+        }
+        if (typeof value === 'boolean') {
+            return 'bool';
+        }
+        if (Array.isArray(value)) {
+            return 'array';
+        }
+        if (value && typeof value === 'object') {
+            return 'object';
+        }
+        if (value === null || value === undefined) {
+            return 'string';
+        }
+        return 'string';
+    }
+
+    function stateValueToInput(type, value) {
+        const normalizedType = normalizeCreateType(type);
+        if (normalizedType === 'number') {
+            return value === null || value === undefined ? '' : String(value);
+        }
+        if (normalizedType === 'bool') {
+            return value ? 'true' : 'false';
+        }
+        if (normalizedType === 'array' || normalizedType === 'object') {
+            try {
+                return JSON.stringify(value);
+            } catch {
+                return '';
+            }
+        }
+        if (normalizedType === 'mixed') {
+            if (value === null || value === undefined) {
+                return '';
+            }
+            if (typeof value === 'string') {
+                return value;
+            }
+            try {
+                return JSON.stringify(value);
+            } catch {
+                return String(value);
+            }
+        }
+        return value === null || value === undefined ? '' : String(value);
+    }
+
+    function escapeSelectorValue(value) {
+        return String(value || '').replace(/([!"#$%&'()*+,./:;<=>?@[\\\]^`{|}~])/g, '\\$1');
+    }
+
+    function parseCreateStateValue(type, raw) {
+        const normalizedType = String(type || '').trim().toLowerCase();
+        if (normalizedType === 'number') {
+            const parsedNumber = Number(raw);
+            return Number.isFinite(parsedNumber) ? parsedNumber : undefined;
+        }
+        if (normalizedType === 'bool' || normalizedType === 'boolean') {
+            const lowered = String(raw || '').trim().toLowerCase();
+            if (['true', '1', 'yes', 'ja', 'on'].includes(lowered)) {
+                return true;
+            }
+            if (['false', '0', 'no', 'nein', 'off', ''].includes(lowered)) {
+                return false;
+            }
+            return undefined;
+        }
+        if (normalizedType === 'array') {
+            try {
+                const parsed = JSON.parse(String(raw || '[]'));
+                return Array.isArray(parsed) ? parsed : undefined;
+            } catch {
+                return undefined;
+            }
+        }
+        if (normalizedType === 'object') {
+            try {
+                const parsed = JSON.parse(String(raw || '{}'));
+                return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : undefined;
+            } catch {
+                return undefined;
+            }
+        }
+        if (normalizedType === 'mixed') {
+            const text = String(raw || '').trim();
+            if (!text) {
+                return '';
+            }
+            try {
+                return JSON.parse(text);
+            } catch {
+                return text;
+            }
+        }
+        return String(raw || '');
+    }
+
+    function readSubscriptionsToMap(value) {
+        const list = Array.isArray(value) ? value : [];
+        const map = new Map();
+        list.forEach((item) => {
+            const path = item && item.path ? String(item.path).trim().replace(/^\/+|\/+$/g, '') : '';
+            if (!path) {
+                return;
+            }
+            const stateId = item && item.stateId ? String(item.stateId).trim() : defaultReadStateId(path);
+            const enabled = item && item.enabled !== false;
+            if (!enabled) {
+                return;
+            }
+            map.set(path, { path, stateId, enabled: true });
+        });
+        return map;
+    }
+
+    function defaultReadStateId(path) {
+        const suffix = String(path || '')
+            .split('/')
+            .map((part) => part.trim().replace(/[^a-zA-Z0-9_-]+/g, '_').replace(/^_+|_+$/g, ''))
+            .filter(Boolean)
+            .join('.');
+        return suffix ? `${namespace}.read.${suffix}` : `${namespace}.read.value`;
+    }
+
     function toNumber(value, fallback) {
         const parsed = Number(value);
         return Number.isFinite(parsed) ? parsed : fallback;
@@ -1118,3 +1734,5 @@
         });
     }
 })();
+
+

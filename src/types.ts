@@ -26,6 +26,7 @@ export interface AdapterNativeConfig {
   dailyWriteHour?: number;
   dailyWriteMinute?: number;
   channels?: Partial<ChannelConfig>[];
+  readSubscriptions?: Partial<ReadSubscriptionConfig>[];
 }
 
 export interface FirebaseServiceAccount {
@@ -72,4 +73,10 @@ export interface CustomStateConfig {
   dailyHour?: number;
   dailyMinute?: number;
   defaultValue?: number | null;
+}
+
+export interface ReadSubscriptionConfig {
+  path: string;
+  stateId: string;
+  enabled?: boolean;
 }
