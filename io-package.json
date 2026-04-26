@@ -1,8 +1,12 @@
 {
   "common": {
     "name": "firebase-history-sync",
-    "version": "0.0.3",
+    "version": "0.1.1",
     "news": {
+      "0.1.1": {
+        "en": "Fixed repeated runtime reloads, change-mode writes, and added current values to the adapter tab.",
+        "de": "Wiederholte Runtime-Neustarts und Change-Mode-Writes korrigiert sowie aktuelle Werte im Adapter-Tab ergänzt."
+      },
       "0.0.3": {
         "en": "Added a dedicated Firebase Sync admin tab and removed auto-filled default channels from instance storage.",
         "de": "Eigener Firebase-Sync-Admin-Tab hinzugefuegt und automatisch vorbefuellte Standard-Channels aus der Instanzspeicherung entfernt."
