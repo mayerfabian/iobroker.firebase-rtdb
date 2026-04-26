@@ -158,10 +158,7 @@ export class SyncRuntime {
     }
 
     if (channel.mode === 'change') {
-      if (delta >= (channel.minChange ?? 0)) {
-        return { shouldWrite: true, reason: `value changed (delta ${delta} >= ${channel.minChange ?? 0})`, delta };
-      }
-      return { shouldWrite: false, reason: `delta below minChange (${delta} < ${channel.minChange ?? 0})`, delta };
+      return { shouldWrite: true, reason: `value changed (delta ${delta})`, delta };
     }
 
     if (channel.mode === 'threshold' && delta >= (channel.minChange ?? 0)) {

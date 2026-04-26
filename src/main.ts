@@ -641,8 +641,19 @@ class FirebaseHistorySyncAdapter extends utils.Adapter {
         nextObject.common.custom = nextObject.common.custom || {};
 
         if (desiredChannel) {
-          nextObject.common.custom[this.namespace] = this.channelToCustomStateConfig(desiredChannel, config);
-          delete nextObject.common.custom[this.name];
+          const desiredCustom = this.channelToCustomStateConfig(desiredChannel, config);
+          const namespaceMatches = customStateConfigsEqual(namespaceCustom, desiredCustom);
+          const legacyNeedsRemoval = Boolean(legacyCustom?.enabled);
+
+          if (namespaceMatches && !legacyNeedsRemoval) {
+            this.log.debug(`Skipping ${stateId}: active custom config already matches desired state`);
+            continue;
+          }
+
+          nextObject.common.custom[this.namespace] = desiredCustom;
+          if (legacyNeedsRemoval) {
+            delete nextObject.common.custom[this.name];
+          }
         } else if (isForcedRemoval) {
           delete nextObject.common.custom[this.namespace];
           delete nextObject.common.custom[this.name];
@@ -1523,6 +1534,31 @@ function mergeChannelsByStateId(baseChannels: ChannelConfig[], customChannels: C
   }
 
   return [...byStateId.values()].filter((channel) => channel.enabled !== false && channel.sync !== false);
+}
+
+function customStateConfigsEqual(
+  current: CustomStateConfig | undefined,
+  desired: CustomStateConfig
+): boolean {
+  if (!current) {
+    return false;
+  }
+
+  return (
+    current.enabled === desired.enabled &&
+    current.sync === desired.sync &&
+    current.key === desired.key &&
+    current.mode === desired.mode &&
+    current.minChange === desired.minChange &&
+    current.factor === desired.factor &&
+    current.transform === desired.transform &&
+    current.round === desired.round &&
+    current.minSendIntervalMs === desired.minSendIntervalMs &&
+    current.maxSendIntervalMs === desired.maxSendIntervalMs &&
+    current.dailyHour === desired.dailyHour &&
+    current.dailyMinute === desired.dailyMinute &&
+    current.defaultValue === desired.defaultValue
+  );
 }
 
 if (require.main !== module) {
