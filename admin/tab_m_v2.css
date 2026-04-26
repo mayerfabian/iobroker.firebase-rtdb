@@ -465,10 +465,30 @@ body.m {
     gap: 12px;
 }
 
+.picker-item .picker-text {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(120px, 220px);
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+    width: 100%;
+}
+
 .picker-item .picker-id {
     font-family: Consolas, monospace;
     color: #22303c;
     word-break: break-all;
+}
+
+.picker-item .picker-value {
+    min-width: 0;
+    color: #1f2933;
+    font-family: Consolas, monospace;
+    font-weight: 600;
+    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .picker-empty {
@@ -494,7 +514,7 @@ body.m {
 
 .channel-summary {
     display: grid;
-    grid-template-columns: 80px minmax(260px, 2fr) minmax(220px, 1.5fr) 46px;
+    grid-template-columns: 80px minmax(240px, 2fr) minmax(200px, 1.3fr) minmax(140px, 0.8fr) 46px;
     gap: 12px;
     align-items: center;
     padding: 14px 16px;
@@ -559,6 +579,14 @@ body.m {
     word-break: break-all;
     color: #22303c;
     font-family: Consolas, monospace;
+}
+
+.current-value-field .summary-value-inline,
+.readonly-value {
+    color: #1f2933;
+    font-family: Consolas, monospace;
+    font-weight: 600;
+    word-break: break-word;
 }
 
 .summary-toggle {
@@ -665,6 +693,18 @@ body.m {
     line-height: 1.25;
 }
 
+.readonly-value {
+    min-height: 2.2rem;
+    line-height: 2.2rem;
+    padding: 0 10px;
+    border: 1px solid #d8e0e6;
+    border-radius: 4px;
+    background: #f7f9fb;
+    box-sizing: border-box;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .channel-card.mode-daily .mode-not-daily {
     display: none;
 }
@@ -746,7 +786,8 @@ body.m {
         grid-template-columns: 74px minmax(0, 1fr) 34px;
     }
 
-    .channel-summary .summary-field.key-field {
+    .channel-summary .summary-field.key-field,
+    .channel-summary .summary-field.current-value-field {
         grid-column: 2 / 3;
     }
 
@@ -771,6 +812,15 @@ body.m {
     .picker-toolbar {
         flex-direction: column;
         align-items: stretch;
+    }
+
+    .picker-item .picker-text {
+        grid-template-columns: 1fr;
+        gap: 4px;
+    }
+
+    .picker-item .picker-value {
+        text-align: left;
     }
 
     .summary-grid {

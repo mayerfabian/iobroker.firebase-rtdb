@@ -23,6 +23,8 @@
     let removedStateIds = new Set();
     let initiallyLoadedStateIds = new Set();
     let availableStates = [];
+    let availableStateValues = new Map();
+    let loadingAvailableStateValues = new Set();
     let loadedStateObjects = new Map();
     let loadedReadableRtdbEntries = [];
     let selectedReadableRtdbPaths = new Set();
@@ -135,6 +137,7 @@
             .filter(Boolean)
             .sort((a, b) => String(a.stateId).localeCompare(String(b.stateId)));
         initiallyLoadedStateIds = new Set(rows.map((row) => row.stateId));
+        await loadCurrentStateValues(rows);
 
         debugLog('loadPage finished', {
             configuredRows: rows.length,
@@ -157,6 +160,7 @@
         $('#picker-search').val('');
         renderPickerList();
         $('#object-picker-modal').modal('open');
+        void loadPickerStateValues(availableStates);
     }
 
     function renderPickerList() {
@@ -173,11 +177,21 @@
 
         filteredStates.forEach((stateId) => {
             const checked = pickerSelection.has(stateId) ? 'checked' : '';
+            const object = loadedStateObjects.get(stateId);
+            const valueText = availableStateValues.has(stateId)
+                ? formatCurrentValueWithUnit({
+                    currentValue: availableStateValues.get(stateId),
+                    unit: getStateUnit(object)
+                })
+                : '...';
             const $item = $(`
                 <div class="picker-item">
                     <label>
                         <input type="checkbox" class="filled-in picker-checkbox" data-state-id="${escapeHtml(stateId)}" ${checked} />
-                        <span class="picker-id">${escapeHtml(stateId)}</span>
+                        <span class="picker-text">
+                            <span class="picker-id">${escapeHtml(stateId)}</span>
+                            <span class="picker-value" data-state-id="${escapeHtml(stateId)}" title="${escapeHtml(valueText)}">${escapeHtml(valueText)}</span>
+                        </span>
                     </label>
                 </div>
             `);
@@ -196,6 +210,7 @@
         });
 
         updatePickerSummary(filteredStates.length);
+        void loadPickerStateValues(filteredStates);
     }
 
     function updatePickerSummary(visibleCount) {
@@ -234,6 +249,7 @@
                 continue;
             }
 
+            const object = loadedStateObjects.get(stateId);
             rows.push({
                 stateId,
                 key: objectIdToFirebaseKey(stateId),
@@ -248,11 +264,14 @@
                 round: DEFAULT_ROW.round,
                 minSendIntervalMs: DEFAULT_ROW.minSendIntervalMs,
                 maxSendIntervalMs: DEFAULT_ROW.maxSendIntervalMs,
-                defaultValue: DEFAULT_ROW.defaultValue
+                defaultValue: DEFAULT_ROW.defaultValue,
+                currentValue: null,
+                unit: getStateUnit(object)
             });
         }
 
         rows.sort((a, b) => a.stateId.localeCompare(b.stateId));
+        await loadCurrentStateValues(rows.filter((row) => selectedStateIds.includes(row.stateId)));
         renderRows();
         updateSummaryDisplay(rows);
         $('#object-picker-modal').modal('close');
@@ -282,8 +301,22 @@
             round: custom.round ?? DEFAULT_ROW.round,
             minSendIntervalMs: custom.minSendIntervalMs ?? DEFAULT_ROW.minSendIntervalMs,
             maxSendIntervalMs: custom.maxSendIntervalMs ?? DEFAULT_ROW.maxSendIntervalMs,
-            defaultValue: custom.defaultValue ?? ''
+            defaultValue: custom.defaultValue ?? '',
+            currentValue: null,
+            unit: getStateUnit(object)
         };
+    }
+
+    async function loadCurrentStateValues(channelRows) {
+        await Promise.all(channelRows.map(async (row) => {
+            try {
+                const state = await getAnyState(row.stateId);
+                row.currentValue = state ? state.val : null;
+            } catch (error) {
+                row.currentValue = null;
+                debugWarn(`Could not read current state value for ${row.stateId}`, error);
+            }
+        }));
     }
 
     async function loadAvailableStates() {
@@ -292,10 +325,61 @@
             endkey: '\u9999'
         });
 
-        availableStates = (stateView.rows || [])
-            .map((row) => row?.id || row?.value?._id)
-            .filter(Boolean)
+        const stateEntries = (stateView.rows || [])
+            .map((row) => ({
+                id: row?.id || row?.value?._id,
+                object: row?.value
+            }))
+            .filter((entry) => Boolean(entry.id));
+
+        stateEntries.forEach((entry) => {
+            if (entry.object) {
+                loadedStateObjects.set(entry.id, entry.object);
+            }
+        });
+        availableStates = stateEntries
+            .map((entry) => entry.id)
             .sort((a, b) => String(a).localeCompare(String(b)));
+        availableStateValues = new Map();
+        loadingAvailableStateValues = new Set();
+    }
+
+    async function loadPickerStateValues(stateIds) {
+        const pendingStateIds = [...new Set(stateIds)]
+            .filter((stateId) => !availableStateValues.has(stateId) && !loadingAvailableStateValues.has(stateId));
+        if (!pendingStateIds.length) {
+            return;
+        }
+
+        const batchSize = 50;
+        pendingStateIds.forEach((stateId) => loadingAvailableStateValues.add(stateId));
+
+        for (let index = 0; index < pendingStateIds.length; index += batchSize) {
+            const batch = pendingStateIds.slice(index, index + batchSize);
+            await Promise.all(batch.map(async (stateId) => {
+                try {
+                    const state = await getAnyState(stateId);
+                    availableStateValues.set(stateId, state ? state.val : null);
+                    updatePickerStateValue(stateId);
+                } catch (error) {
+                    availableStateValues.set(stateId, null);
+                    updatePickerStateValue(stateId);
+                    debugWarn(`Could not read picker state value for ${stateId}`, error);
+                } finally {
+                    loadingAvailableStateValues.delete(stateId);
+                }
+            }));
+        }
+    }
+
+    function updatePickerStateValue(stateId) {
+        const object = loadedStateObjects.get(stateId);
+        const valueText = formatCurrentValueWithUnit({
+            currentValue: availableStateValues.get(stateId),
+            unit: getStateUnit(object)
+        });
+        const selector = `.picker-value[data-state-id="${escapeSelectorValue(stateId)}"]`;
+        $(selector).text(valueText).attr('title', valueText);
     }
 
     function renderRows(emptyMessage) {
@@ -322,6 +406,10 @@
                         <div class="summary-field key-field">
                             <span class="summary-label-inline">Firebase Key</span>
                             <span class="summary-value-inline">${escapeHtml(row.key)}</span>
+                        </div>
+                        <div class="summary-field current-value-field">
+                            <span class="summary-label-inline">Aktueller Wert</span>
+                            <span class="summary-value-inline current-value-inline">${escapeHtml(formatCurrentValueWithUnit(row))}</span>
                         </div>
                         <div class="summary-toggle">&#9662;</div>
                     </div>
@@ -401,6 +489,11 @@
                                 <label>Default</label>
                                 <input type="number" step="0.1" data-field="defaultValue" value="${formatInputValue(row.defaultValue)}" />
                                 <div class="field-help">Wert f\u00FCr den Startfall oder wenn kein g\u00FCltiger Messwert vorliegt.</div>
+                            </div>
+                            <div class="detail-field">
+                                <label>Aktueller Wert</label>
+                                <div class="readonly-value">${escapeHtml(formatCurrentValue(row.currentValue))}</div>
+                                <div class="field-help">Einheit: ${escapeHtml(formatUnit(row.unit))}</div>
                             </div>
                         </div>
                     </div>
@@ -485,6 +578,7 @@
         const $card = $tr.closest('.channel-card');
         $card.find('.summary-field .summary-value-inline').eq(0).text(row.stateId);
         $card.find('.summary-field .summary-value-inline').eq(1).text(row.key);
+        $card.find('.current-value-inline').text(formatCurrentValueWithUnit(row));
         updateSummaryDisplay(rows);
     }
 
@@ -621,10 +715,13 @@
             round: DEFAULT_ROW.round,
             minSendIntervalMs: DEFAULT_ROW.minSendIntervalMs,
             maxSendIntervalMs: DEFAULT_ROW.maxSendIntervalMs,
-            defaultValue: DEFAULT_ROW.defaultValue
+            defaultValue: DEFAULT_ROW.defaultValue,
+            currentValue: null,
+            unit: getStateUnit(object)
         });
 
         rows.sort((a, b) => a.stateId.localeCompare(b.stateId));
+        await loadCurrentStateValues(rows.filter((row) => row.stateId === stateId));
         $('#new-state-id').val('');
         renderRows();
         updateSummaryDisplay(rows);
@@ -1599,6 +1696,36 @@
         return value === null || value === undefined ? '' : String(value);
     }
 
+    function getStateUnit(object) {
+        const unit = object?.common?.unit;
+        return unit === null || unit === undefined ? '' : String(unit);
+    }
+
+    function formatUnit(unit) {
+        const normalized = String(unit || '').trim();
+        return normalized || '-';
+    }
+
+    function formatCurrentValueWithUnit(row) {
+        const valueText = formatCurrentValue(row?.currentValue);
+        const unitText = String(row?.unit || '').trim();
+        return unitText && valueText !== '-' ? `${valueText} ${unitText}` : valueText;
+    }
+
+    function formatCurrentValue(value) {
+        if (value === null || value === undefined) {
+            return '-';
+        }
+        if (typeof value === 'object') {
+            try {
+                return JSON.stringify(value);
+            } catch {
+                return String(value);
+            }
+        }
+        return String(value);
+    }
+
     function cloneObjectForWrite(object) {
         if (!object) {
             return null;
@@ -1659,6 +1786,31 @@
                     durationMs: Date.now() - startedAt
                 });
                 resolve(obj);
+            });
+        });
+    }
+
+    function getAnyState(id) {
+        const command = 'getState';
+        return new Promise((resolve, reject) => {
+            const startedAt = Date.now();
+            const timeout = setTimeout(() => {
+                reject(new Error(`${command} timeout after ${SOCKET_TIMEOUT_MS}ms for ${id}`));
+            }, SOCKET_TIMEOUT_MS);
+
+            socket.emit(command, id, (err, state) => {
+                clearTimeout(timeout);
+                if (err) {
+                    reject(new Error(String(err)));
+                    return;
+                }
+
+                debugLog('socket state completed', {
+                    command,
+                    id,
+                    durationMs: Date.now() - startedAt
+                });
+                resolve(state);
             });
         });
     }
